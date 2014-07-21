@@ -5,6 +5,7 @@
 # TODO : checking before sending
 # TODO : exceptions 
 # $Date$ 
+$id$
 
 import subprocess
 import logging

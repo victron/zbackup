@@ -4,7 +4,7 @@
 # TODO : sync direction
 # TODO : checking before sending
 # TODO : exceptions 
-#
+# $Date$ 
 
 import subprocess
 import logging

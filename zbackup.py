@@ -1,11 +1,10 @@
-#!/usr/local/bin/python3
+#!/usr/bin/python3
 
 # TODO : add exit check after every system call 
 # TODO : sync direction
 # TODO : checking before sending
 # TODO : exceptions 
-# $Date$ 
-#$id$
+
 
 import subprocess
 import logging
@@ -28,7 +27,7 @@ logger.info( "----------- start working ------------" )
 OS_type = subprocess.getoutput(["uname"])
 if OS_type == 'Linux':
   logger.info( "OS is " + OS_type )
-  dev_disk = '/dev/sdb4'
+  dev_disk = '/dev/disk/by-partuuid/09353f9f-c554-11e1-8897-5c260a0e9ee6'
   root_pool = "rpool"
 elif OS_type == 'FreeBSD':
   logger.info( "OS is " + OS_type )
@@ -55,8 +54,8 @@ subprocess.call(['sudo', '-v'])
 
 ############## constant values #################
 disk_pool = "backup"
-dest_SYS = disk_pool
-src_SYS = root_pool
+dest_SYS = root_pool
+src_SYS = disk_pool
 #dest_SYS = root_pool
 logger.debug('<dest_SYS> '+ dest_SYS)
 logger.debug('<src_SYS> '+ src_SYS)
@@ -101,7 +100,7 @@ def create_last_snap_list(pool_list,snap_list,last_or_previous):
 
 def create_new_snap(root_pool, pool_list):
 # create new snapshots
-#  stop_point = input("stop_pint push enter\n")
+  stop_point = input("stop_pint push enter\n")
   for i in pool_list:
     logger.info('call to create snapshot '+ root_pool+i+current_date)
     subprocess.call(['sudo', 'zfs','snapshot', root_pool+i+current_date])
@@ -144,7 +143,7 @@ logger.debug('<all_snap_dst> value ' + str(all_snap_dst))
 previos_snap_list_src = create_last_snap_list(pool_list, all_snap_src,0)
 logger.info('<previos_snap_list_src> ' + str(previos_snap_list_src))
 previos_snap_list_dst = create_last_snap_list(pool_list, all_snap_dst,0)
-logger.info('<previos_snap_list_src> ' + str(previos_snap_list_dst))
+logger.info('<previos_snap_list_dst> ' + str(previos_snap_list_dst))
 
 # check snapshots on disk and PC
 if len(previos_snap_list_src) != len(previos_snap_list_dst):
@@ -172,8 +171,8 @@ elif dest_SYS == root_pool:
     logger.info('===== direction: '+ 'usb disk' + '--->' + OS_type)
     
     # check snapshots on disk and PC
-    for i in len(previos_snap_list_src):
-        if previos_snap_list_src[i] == previos_snap_list_dst[i]:
+    for i in range(len(previos_snap_list_src)):
+        if previos_snap_list_src[i].replace(src_SYS,'') == previos_snap_list_dst[i].replace(dest_SYS,''):
             logger.info('previous snaps on disk and PC identical - nothing to do')
             exit(0)
     
@@ -182,6 +181,10 @@ elif dest_SYS == root_pool:
     previos_snap_list_src = create_last_snap_list(pool_list, all_snap_src,1)
     logger.debug('<previos_snap_list_src> ' + str(previos_snap_list_src))
     
+    for i in range(len(previos_snap_list_src)):
+        if previos_snap_list_src[i].replace(src_SYS,'') != previos_snap_list_dst[i].replace(dest_SYS,''):
+            logger.error('previous-1 snaps on disk and PC different')
+            exit(201)
 
 logger.info('===== send snap  ======')
 send_snap(dest_SYS,pool_list,new_snap_list,previos_snap_list_src)

@@ -1,13 +1,27 @@
 #!/usr/bin/python3
+# $Id$
+# $Date$
 
-# TODO : add exit check after every system call 
-# TODO : sync direction
-# TODO : checking before sending
+# NOTE: script need to call with root privileges or via "sudo"
+
+# TODO : add "exit code" check after every system call 
 # TODO : exceptions 
 
 
 import subprocess
 import logging
+import argparse
+
+############## constant values #################
+disk_pool = "backup"
+
+################# command line options ###########################
+help_info = 'snapshots sending direction to usb or os'
+parser = argparse.ArgumentParser(description='Arguments from command line')
+parser.add_argument('direction', action='store', type=str, help=help_info, choices=['usb','os' ])
+arg = parser.parse_args()
+
+
 
 ##################### logging block ##################
 formatter = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -38,31 +52,42 @@ else:
   exit(202)
 
 # check USB connection  
-for i in range(3):
+atempts = 3
+for i in range(atempts):
     exit_code = subprocess.call(['ls', dev_disk])
     if exit_code == 0:
         break
     logger.error( "not found " + dev_disk)
-    print("device "+ dev_disk+ " not found. Connect disk...")
-    null_val = input('push enter... '+str(i))
+    print("device "+ dev_disk+ " not found. \nConnect USB disk...")
+    null_val = input('and push enter... '+str(atempts-i))
 if exit_code != 0:
     print("device "+ dev_disk+ " not found. Connect disk...")
     exit(exit_code)
 
-print('enter your SUDO password')
-subprocess.call(['sudo', '-v'])
 
-############## constant values #################
-disk_pool = "backup"
-dest_SYS = root_pool
-src_SYS = disk_pool
-#dest_SYS = root_pool
+
+
+
+############### set direction according command line options ###########
+if arg.direction == 'usb':
+    dest_SYS = disk_pool
+    src_SYS = root_pool
+elif arg.direction == 'os':
+    dest_SYS = root_pool
+    src_SYS = disk_pool
+else :
+    logger.error('wrong direction exit ... ')
+    exit (201)
+    
 logger.debug('<dest_SYS> '+ dest_SYS)
 logger.debug('<src_SYS> '+ src_SYS)
 pool_list = ['/test@', '/home@', '/home/vic@']
 logger.info('data sets list to work '+ str(pool_list))
 keyword_snap = "@2014-"
 logger.debug('keyword for search MY snapshots '+ keyword_snap)
+
+stop_point = input("stop_pint push enter\n")
+
 
 #================================================
 
@@ -71,7 +96,7 @@ logger.debug('system date '+ current_date)
 
 def get_snap_list():
   # get snapshots list
-  all_snap = subprocess.getoutput(["sudo zfs list -H -o name -s name -t snapshot"])
+  all_snap = subprocess.getoutput(["zfs list -H -o name -s name -t snapshot"])
   all_snap = all_snap.split('\n')
   logger.debug('<all_snap> snap list, system return  '+ str(all_snap))
   return all_snap
@@ -103,7 +128,7 @@ def create_new_snap(root_pool, pool_list):
   stop_point = input("stop_pint push enter\n")
   for i in pool_list:
     logger.info('call to create snapshot '+ root_pool+i+current_date)
-    subprocess.call(['sudo', 'zfs','snapshot', root_pool+i+current_date])
+    subprocess.call(['zfs','snapshot', root_pool+i+current_date])
     logger.info('call to create snapshot code='+ "TODO")
 
 def send_snap(recv_root_pool, pool_list, new_pool_list, old_pool_list):
@@ -111,8 +136,8 @@ def send_snap(recv_root_pool, pool_list, new_pool_list, old_pool_list):
   for i in range(0, len(pool_list)):
     logger.info('start sending   snap : '+ old_pool_list[i] + ' inctrement ' + new_pool_list[i])
     logger.info('start recieving snap : '+ recv_root_pool+pool_list[i][:-1])
-    p1 = subprocess.Popen(['sudo', 'zfs','send','-v','-i', old_pool_list[i], new_pool_list[i]], stdout=subprocess.PIPE)
-    p2 = subprocess.Popen(['sudo', 'zfs','receive','-v','-F', recv_root_pool+pool_list[i][:-1]], stdin=p1.stdout, stdout=subprocess.PIPE)
+    p1 = subprocess.Popen(['zfs','send','-v','-i', old_pool_list[i], new_pool_list[i]], stdout=subprocess.PIPE)
+    p2 = subprocess.Popen(['zfs','receive','-v','-F', recv_root_pool+pool_list[i][:-1]], stdin=p1.stdout, stdout=subprocess.PIPE)
     output = p2.communicate()[0]
     logger.info('transfer snapshots code='+ 'TODO')
     
@@ -124,12 +149,12 @@ def send_snap(recv_root_pool, pool_list, new_pool_list, old_pool_list):
 ## mount disk
 if OS_type == 'FreeBSD':
 	logger.debug('start  fusefs')
-	subprocess.call(['sudo', '/usr/local/etc/rc.d/fusefs', 'onestart'])
+	subprocess.call(['/usr/local/etc/rc.d/fusefs', 'onestart'])
 
 logger.info('mounting as truecrypt disk '+ dev_disk)
-subprocess.call(['sudo', 'truecrypt', '--filesystem=none', '--slot=1', dev_disk])
+subprocess.call(['truecrypt', '--filesystem=none', '--slot=1', dev_disk])
 logger.info('importing pool.... backup ')
-subprocess.call(['sudo', 'zpool', 'import', 'backup'])
+subprocess.call(['zpool', 'import', 'backup'])
 
 #### send from linux or BSD
 
@@ -191,8 +216,8 @@ send_snap(dest_SYS,pool_list,new_snap_list,previos_snap_list_src)
 
 ## umount disk
 logger.info('exporting pool.... backup ')
-subprocess.call(['sudo', 'zpool', 'export', 'backup'])
+subprocess.call(['zpool', 'export', 'backup'])
 logger.info('Umounting as truecrypt disk '+ dev_disk)
-subprocess.call(['sudo', 'truecrypt', '-d', dev_disk])
+subprocess.call(['truecrypt', '-d', dev_disk])
 
 logger.info( "----------- END ------------" )

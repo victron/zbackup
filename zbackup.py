@@ -3,6 +3,7 @@
 # $Commit$
 # $Date$
 
+
 # NOTE: script need to call with root privileges or via "sudo"
 
 # TODO : add "exit code" check after every system call 

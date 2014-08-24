@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # $Id$
-
+# $Commit$
 # $Date$
 
 # NOTE: script need to call with root privileges or via "sudo"

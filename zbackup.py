@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 # $Id$
-# $Date$
 
 # NOTE: script need to call with root privileges or via "sudo"
 

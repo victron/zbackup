@@ -1,9 +1,9 @@
 #!/usr/bin/python3
 # $Id$
+# $Date$
 
 # NOTE: script need to call with root privileges or via "sudo"
 
-# TODO : add "exit code" check after every system call 
 # TODO : exceptions 
 
 
@@ -127,7 +127,8 @@ def create_new_snap(root_pool, pool_list):
   stop_point = input("stop_pint push enter\n")
   for i in pool_list:
     logger.info('call to create snapshot '+ root_pool+i+current_date)
-    subprocess.call(['zfs','snapshot', root_pool+i+current_date])
+    exit_code = subprocess.call(['zfs','snapshot', root_pool+i+current_date])
+    exit_on_error(exit_code)
     logger.info('call to create snapshot code='+ "TODO")
 
 def send_snap(recv_root_pool, pool_list, new_pool_list, old_pool_list):
@@ -140,6 +141,10 @@ def send_snap(recv_root_pool, pool_list, new_pool_list, old_pool_list):
     output = p2.communicate()[0]
     logger.info('transfer snapshots code='+ 'TODO')
     
+def exit_on_error (exit_code):
+    if exit_code != 0:
+        logger.error('system return code...'+ exit_code)
+        exit (exit_code)
 
 ##################### main block #######################
 
@@ -147,13 +152,16 @@ def send_snap(recv_root_pool, pool_list, new_pool_list, old_pool_list):
 
 ## mount disk
 if OS_type == 'FreeBSD':
-	logger.debug('start  fusefs')
-	subprocess.call(['/usr/local/etc/rc.d/fusefs', 'onestart'])
-
+    logger.debug('start  fusefs')
+    exit_code = subprocess.call(['/usr/local/etc/rc.d/fusefs', 'onestart'])
+    exit_on_error(exit_code)
+    
 logger.info('mounting as truecrypt disk '+ dev_disk)
-subprocess.call(['truecrypt', '--filesystem=none', '--slot=1', dev_disk])
+exit_code = subprocess.call(['truecrypt', '--filesystem=none', '--slot=1', dev_disk])
+exit_on_error(exit_code)
 logger.info('importing pool.... backup ')
-subprocess.call(['zpool', 'import', 'backup'])
+exit_code = subprocess.call(['zpool', 'import', 'backup'])
+exit_on_error(exit_code)
 
 #### send from linux or BSD
 
@@ -215,8 +223,10 @@ send_snap(dest_SYS,pool_list,new_snap_list,previos_snap_list_src)
 
 ## umount disk
 logger.info('exporting pool.... backup ')
-subprocess.call(['zpool', 'export', 'backup'])
+exit_code = subprocess.call(['zpool', 'export', 'backup'])
+exit_on_error(exit_code)
 logger.info('Umounting as truecrypt disk '+ dev_disk)
-subprocess.call(['truecrypt', '-d', dev_disk])
+exit_code = subprocess.call(['truecrypt', '-d', dev_disk])
+exit_on_error(exit_code)
 
 logger.info( "----------- END ------------" )

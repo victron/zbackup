@@ -129,7 +129,7 @@ def create_new_snap(root_pool, pool_list):
     logger.info('call to create snapshot '+ root_pool+i+current_date)
     exit_code = subprocess.call(['zfs','snapshot', root_pool+i+current_date])
     exit_on_error(exit_code)
-    logger.info(root_pool+i+current_date + '....created  '+ exit_code)
+    logger.info(root_pool+i+current_date + '....created  '+ str(exit_code))
 
 def send_snap(recv_root_pool, pool_list, new_pool_list, old_pool_list):
   stop_point = input("stop_pint push enter\n")
@@ -143,7 +143,7 @@ def send_snap(recv_root_pool, pool_list, new_pool_list, old_pool_list):
     
 def exit_on_error (exit_code):
     if exit_code != 0:
-        logger.error('system return code...'+ exit_code)
+        logger.error('system return code...'+ str(exit_code))
         exit (exit_code)
 
 ##################### main block #######################

@@ -5,6 +5,7 @@
 # NOTE: script need to call with root privileges or via "sudo"
 
 # TODO : exceptions 
+# TODO : check mounted disk or not
 
 
 import subprocess
@@ -141,7 +142,7 @@ def send_snap(recv_root_pool, pool_list, new_pool_list, old_pool_list):
     output = p2.communicate()[0]
     exit_code = p2.returncode
     exit_on_error(exit_code)
-    logger.info('transferred'+ recv_root_pool+pool_list[i][:-1]] + 'return code='+ exit_code)
+    logger.info('transferred'+ str(recv_root_pool+pool_list[i][:-1]]) + 'return code='+ exit_code)
     
 def exit_on_error (exit_code):
     if exit_code != 0:
@@ -159,8 +160,13 @@ if OS_type == 'FreeBSD':
     exit_on_error(exit_code)
     
 logger.info('mounting as truecrypt disk '+ dev_disk)
-exit_code = subprocess.call(['truecrypt', '--filesystem=none', '--slot=1', dev_disk])
-exit_on_error(exit_code)
+try:
+    exit_code = subprocess.call(['truecrypt', '--filesystem=none', '--slot=1', dev_disk])
+    exit_on_error(exit_code)
+except:
+    logger.error('unknow exeption... ... exit')
+    exit (25)
+
 logger.info('importing pool.... backup ')
 exit_code = subprocess.call(['zpool', 'import', 'backup'])
 exit_on_error(exit_code)

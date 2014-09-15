@@ -139,7 +139,9 @@ def send_snap(recv_root_pool, pool_list, new_pool_list, old_pool_list):
     p1 = subprocess.Popen(['zfs','send','-v','-i', old_pool_list[i], new_pool_list[i]], stdout=subprocess.PIPE)
     p2 = subprocess.Popen(['zfs','receive','-v','-F', recv_root_pool+pool_list[i][:-1]], stdin=p1.stdout, stdout=subprocess.PIPE)
     output = p2.communicate()[0]
-    logger.info('transfer snapshots code='+ 'TODO')
+    exit_code = p2.returncode
+    exit_on_error(exit_code)
+    logger.info('transferred'+ recv_root_pool+pool_list[i][:-1]] + 'return code='+ exit_code)
     
 def exit_on_error (exit_code):
     if exit_code != 0:

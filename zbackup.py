@@ -143,7 +143,7 @@ def send_snap(recv_root_pool, pool_list, new_pool_list, old_pool_list):
     exit_code = p2.returncode
     exit_on_error(exit_code)
     logger.info('transferred'+ str(recv_root_pool+pool_list[i][:-1]) + 'return code='+ str(exit_code))
-    
+
 def exit_on_error (exit_code):
     if exit_code != 0:
         logger.error('system return code...'+ str(exit_code))

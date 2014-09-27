@@ -6,6 +6,7 @@
 
 # TODO : exceptions 
 # TODO : check mounted disk or not
+# TODO : find last snap on os and find same on disk, and rebuild send function
 
 
 import subprocess

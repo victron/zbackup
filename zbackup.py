@@ -5,8 +5,9 @@
 # NOTE: script need to call with root privileges or via "sudo"
 
 # TODO : exceptions 
-# TODO : check mounted disk or not
-# TODO : find last snap on os and find same on disk, and rebuild send function
+# TODO : check mounted disk or not, partly DONE
+# DONE : find last snap on os and find same on disk, and rebuild send function
+# TODO : Global variables, partly DONE
 
 
 import subprocess
@@ -15,14 +16,16 @@ import argparse
 
 ############## constant values #################
 disk_pool = "backup"
+Linux_zpool = "rpool"
+FreeBSD_zpool = "zroot-n"
+dev_disk = "09353f9f-c554-11e1-8897-5c260a0e9ee6"
+keyword_snap = "@2014-"
 
 ################# command line options ###########################
 help_info = 'snapshots sending direction to usb or os'
 parser = argparse.ArgumentParser(description='Arguments from command line')
 parser.add_argument('direction', action='store', type=str, help=help_info, choices=['usb','os' ])
 arg = parser.parse_args()
-
-
 
 ##################### logging block ##################
 formatter = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -36,18 +39,16 @@ logger = logging.getLogger(__name__)
 
 logger.info( "----------- start working ------------" )
 
-
-
 ## OS type  
 OS_type = subprocess.getoutput(["uname"])
 if OS_type == 'Linux':
   logger.info( "OS is " + OS_type )
-  dev_disk = '/dev/disk/by-partuuid/09353f9f-c554-11e1-8897-5c260a0e9ee6'
-  root_pool = "rpool"
+  dev_disk = '/dev/disk/by-partuuid/'+dev_disk
+  root_pool = Linux_zpool
 elif OS_type == 'FreeBSD':
   logger.info( "OS is " + OS_type )
-  dev_disk = '/dev/gptid/09353f9f-c554-11e1-8897-5c260a0e9ee6'
-  root_pool = "zroot-n"
+  dev_disk = '/dev/gptid/'+dev_disk
+  root_pool = FreeBSD_zpool
 else:
   logger.error('UNknow OS '+ OS_type)
   exit(202)
@@ -65,10 +66,6 @@ if exit_code != 0:
     print("device "+ dev_disk+ " not found. Connect disk...")
     exit(exit_code)
 
-
-
-
-
 ############### set direction according command line options ###########
 if arg.direction == 'usb':
     dest_SYS = disk_pool
@@ -84,11 +81,9 @@ logger.debug('<dest_SYS> '+ dest_SYS)
 logger.debug('<src_SYS> '+ src_SYS)
 pool_list = ['/test@', '/home@', '/home/vic@']
 logger.info('data sets list to work '+ str(pool_list))
-keyword_snap = "@2014-"
 logger.debug('keyword for search MY snapshots '+ keyword_snap)
 
 stop_point = input("stop_pint push enter\n")
-
 
 #================================================
 
@@ -109,7 +104,6 @@ def search_in_list(search_str, search_list):
     if i.find(search_str) != -1:
       out_list.append(i)
   return out_list
-
 
 def find_later_snap(list_snap,last_or_previous):
 # return the latest snapshot
@@ -147,30 +141,55 @@ def send_snap(recv_root_pool, pool_list, new_pool_list, old_pool_list):
 
 def exit_on_error (exit_code):
     if exit_code != 0:
-        logger.error('system return code...'+ str(exit_code))
+        logger.error('exit... system return code...'+ str(exit_code))
         exit (exit_code)
+
+def umount_disk():
+    logger.info('exporting pool.... backup ')
+    exit_code = subprocess.call(['zpool', 'export', 'backup'])
+    exit_on_error(exit_code)
+    logger.info('Umounting as truecrypt disk '+ dev_disk)
+    exit_code = subprocess.call(['truecrypt', '-d', dev_disk])
+    exit_on_error(exit_code)
+    
+def check_mounted():
+  # check usb mounted or not
+  all_Zpools = subprocess.getoutput(["zpool list -H -o name"])
+  all_Zpools = all_Zpools.split('\n')
+  logger.debug('<all_Zpools> in system  '+ str(all_Zpools))
+  if 'backup' in all_Zpools:
+      logger.info('Zpool backup already  imported into system')
+      return 1
+  else:
+      return 0
+
+def mount_disk():
+    if check_mounted() == 1:
+        if OS_type == 'FreeBSD':
+            logger.debug('start  fusefs')
+            exit_code = subprocess.call(['/usr/local/etc/rc.d/fusefs', 'onestart'])
+            exit_on_error(exit_code)
+            
+        logger.info('mounting as truecrypt disk '+ dev_disk)
+        try:
+            exit_code = subprocess.call(['truecrypt', '--filesystem=none', '--slot=1', dev_disk])
+            exit_on_error(exit_code)
+        except:
+            logger.error('unknow exeption... ... exit')
+            exit (25)
+
+        logger.info('importing pool.... backup ')
+        exit_code = subprocess.call(['zpool', 'import', 'backup'])
+        exit_on_error(exit_code)
+    
+    elif check_mounted() == 0:
+        logger.debug('Do not need to mount')
+    else:
+        exit_on_error(202)
 
 ##################### main block #######################
 
-
-
-## mount disk
-if OS_type == 'FreeBSD':
-    logger.debug('start  fusefs')
-    exit_code = subprocess.call(['/usr/local/etc/rc.d/fusefs', 'onestart'])
-    exit_on_error(exit_code)
-    
-logger.info('mounting as truecrypt disk '+ dev_disk)
-try:
-    exit_code = subprocess.call(['truecrypt', '--filesystem=none', '--slot=1', dev_disk])
-    exit_on_error(exit_code)
-except:
-    logger.error('unknow exeption... ... exit')
-    exit (25)
-
-logger.info('importing pool.... backup ')
-exit_code = subprocess.call(['zpool', 'import', 'backup'])
-exit_on_error(exit_code)
+mount_disk()
 
 #### send from linux or BSD
 
@@ -215,27 +234,27 @@ elif dest_SYS == root_pool:
     for i in range(len(previos_snap_list_src)):
         if previos_snap_list_src[i].replace(src_SYS,'') == previos_snap_list_dst[i].replace(dest_SYS,''):
             logger.info('previous snaps on disk and PC identical - nothing to do')
+            umount_disk()
             exit(0)
     
     new_snap_list = previos_snap_list_src
     logger.debug('<new_snap_list> ' + str(new_snap_list))
-    previos_snap_list_src = create_last_snap_list(pool_list, all_snap_src,1)
-    logger.debug('<previos_snap_list_src> ' + str(previos_snap_list_src))
-    
-    for i in range(len(previos_snap_list_src)):
-        if previos_snap_list_src[i].replace(src_SYS,'') != previos_snap_list_dst[i].replace(dest_SYS,''):
-            logger.error('previous-1 snaps on disk and PC different')
+    # searching  previos_snap_list_dst on USB
+    previos_snap_list_src = []
+    for searching_snap in previos_snap_list_dst:
+        if searching_snap.replace(dest_SYS,src_SYS) in all_snap_src:
+            # nothing do = OK
+            previos_snap_list_src.append(searching_snap)
+        else:
+            logger.error('last snaps on OS not found on USB, exit')
+            umount_disk()
             exit(201)
-
+            
+    logger.debug('<previos_snap_list_src> ' + str(previos_snap_list_src))
+    stop_point = input("stop_pint push enter\n")
+    
 logger.info('===== send snap  ======')
 send_snap(dest_SYS,pool_list,new_snap_list,previos_snap_list_src)
 
-## umount disk
-logger.info('exporting pool.... backup ')
-exit_code = subprocess.call(['zpool', 'export', 'backup'])
-exit_on_error(exit_code)
-logger.info('Umounting as truecrypt disk '+ dev_disk)
-exit_code = subprocess.call(['truecrypt', '-d', dev_disk])
-exit_on_error(exit_code)
-
+umount_disk()
 logger.info( "----------- END ------------" )

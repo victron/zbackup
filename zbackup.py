@@ -164,7 +164,7 @@ def check_mounted():
       return 0
 
 def mount_disk():
-    if check_mounted() == 1:
+    if check_mounted() == 0:
         if OS_type == 'FreeBSD':
             logger.debug('start  fusefs')
             exit_code = subprocess.call(['/usr/local/etc/rc.d/fusefs', 'onestart'])
@@ -182,7 +182,7 @@ def mount_disk():
         exit_code = subprocess.call(['zpool', 'import', 'backup'])
         exit_on_error(exit_code)
     
-    elif check_mounted() == 0:
+    elif check_mounted() == 1:
         logger.debug('Do not need to mount')
     else:
         exit_on_error(202)

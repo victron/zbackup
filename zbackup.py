@@ -242,9 +242,10 @@ elif dest_SYS == root_pool:
     # searching  previos_snap_list_dst on USB
     previos_snap_list_src = []
     for searching_snap in previos_snap_list_dst:
-        if searching_snap.replace(dest_SYS,src_SYS) in all_snap_src:
-            # creating new previos_snap_list_src
-            previos_snap_list_src.append(searching_snap.replace(dest_SYS,src_SYS))
+        previos_snap_list_src.append(searching_snap.replace(dest_SYS,src_SYS))
+    for searching_snap in previos_snap_list_src:
+        if searching_snap in all_snap_src:
+            # everything OK
         else:
             logger.error('last snaps on OS not found on USB, exit')
             umount_disk()

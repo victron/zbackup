@@ -20,6 +20,7 @@ Linux_zpool = "rpool"
 FreeBSD_zpool = "zroot-n"
 dev_disk = "09353f9f-c554-11e1-8897-5c260a0e9ee6"
 keyword_snap = "@2014-"
+pool_list = ['/test@', '/home@', '/home/vic@']
 
 ################# command line options ###########################
 help_info = 'snapshots sending direction to usb or os'
@@ -79,7 +80,6 @@ else :
     
 logger.debug('<dest_SYS> '+ dest_SYS)
 logger.debug('<src_SYS> '+ src_SYS)
-pool_list = ['/test@', '/home@', '/home/vic@']
 logger.info('data sets list to work '+ str(pool_list))
 logger.debug('keyword for search MY snapshots '+ keyword_snap)
 
@@ -243,8 +243,8 @@ elif dest_SYS == root_pool:
     previos_snap_list_src = []
     for searching_snap in previos_snap_list_dst:
         if searching_snap.replace(dest_SYS,src_SYS) in all_snap_src:
-            # nothing do = OK
-            previos_snap_list_src.append(searching_snap)
+            # creating new previos_snap_list_src
+            previos_snap_list_src.append(searching_snap.replace(dest_SYS,src_SYS))
         else:
             logger.error('last snaps on OS not found on USB, exit')
             umount_disk()

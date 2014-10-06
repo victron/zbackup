@@ -243,9 +243,12 @@ elif dest_SYS == root_pool:
     previos_snap_list_src = []
     for searching_snap in previos_snap_list_dst:
         previos_snap_list_src.append(searching_snap.replace(dest_SYS,src_SYS))
+        
     for searching_snap in previos_snap_list_src:
         if searching_snap in all_snap_src:
             # everything OK
+            pass
+            
         else:
             logger.error('last snaps on OS not found on USB, exit')
             umount_disk()

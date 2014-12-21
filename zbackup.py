@@ -8,6 +8,9 @@
 # TODO : check mounted disk or not, partly DONE
 # DONE : find last snap on os and find same on disk, and rebuild send function
 # TODO : Global variables, partly DONE
+# TODO : check if there is snap on disk, if not import it fully
+# TODO : config File
+# TODO : moduler
 
 
 import subprocess
@@ -22,18 +25,43 @@ dev_disk = "09353f9f-c554-11e1-8897-5c260a0e9ee6"
 keyword_snap = "@2014-"
 pool_list = ['/test@', '/home@', '/home/vic@']
 
+############ flags
+send_incremental_snap = []
 ################# command line options ###########################
 help_info = 'snapshots sending direction to usb or os'
 parser = argparse.ArgumentParser(description='Arguments from command line')
 parser.add_argument('direction', action='store', type=str, help=help_info, choices=['usb','os' ])
+
+arg_group_v_q = parser.add_mutually_exclusive_group()
+arg_group_v_q.add_argument('-v', '--verbosity', action='count',
+                           default=2,
+                           help='DEBUG on')
+arg_group_v_q.add_argument("-q", "--quiet", action="store_true",
+                           help='be quiet, only CRITICAL logs')
 arg = parser.parse_args()
+
+print(arg.verbosity)
+if arg.quiet:
+    logging_level = 40
+    # logging.ERROR
+    # CRITICAL = 50
+#elif args.verbosity <= 2:
+#    logging_level = 20
+    # logging.INFO
+    # logging.WARNING = 30
+elif arg.verbosity >= 3:
+    logging_level = 10
+    # logging.DEBUG
+    # NOTSET = 0
+else:
+    logging_level = 20
 
 ##################### logging block ##################
 formatter = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging_level,
 #                    filename='zbackup.log',
                     format=formatter,
-                     handlers=[logging.FileHandler("zbackup.log"),
+                    handlers=[logging.FileHandler("zbackup.log"),
                               logging.StreamHandler()])
 
 logger = logging.getLogger(__name__)
@@ -77,7 +105,7 @@ elif arg.direction == 'os':
 else :
     logger.error('wrong direction exit ... ')
     exit (201)
-    
+
 logger.debug('<dest_SYS> '+ dest_SYS)
 logger.debug('<src_SYS> '+ src_SYS)
 logger.info('data sets list to work '+ str(pool_list))
@@ -105,6 +133,22 @@ def search_in_list(search_str, search_list):
       out_list.append(i)
   return out_list
 
+def check_in_list(search_str, search_list):
+    # return True if search_str present in search_list
+    flag = False
+    for i in search_list:
+        if i.find(search_str) != -1:
+            flag = True
+    return flag
+
+def create_pool_list_flag(pool_list,snap_list):
+    # create list of pools which not present in snap_list
+    pool_list_flag = []
+    for i in pool_list:
+        pool_list_flag.append(check_in_list(i, snap_list))
+    return pool_list_flag
+
+
 def find_later_snap(list_snap,last_or_previous):
 # return the latest snapshot
   list_snap = search_in_list(keyword_snap,list_snap)
@@ -115,6 +159,8 @@ def create_last_snap_list(pool_list,snap_list,last_or_previous):
 # create list of last snapshots, needed to process
   latest_snap = []
   for i in pool_list:
+      # last_or_previous == 0 -> it means last snap
+      # last_or_previous == 1 -> it means previous before last snap
     latest_snap.append(find_later_snap(search_in_list(i, snap_list),last_or_previous))
   return latest_snap
 
@@ -127,17 +173,28 @@ def create_new_snap(root_pool, pool_list):
     exit_on_error(exit_code)
     logger.info(root_pool+i+current_date + '....created  '+ str(exit_code))
 
-def send_snap(recv_root_pool, pool_list, new_pool_list, old_pool_list):
+def send_snap(recv_root_pool, pool_list, new_pool_list, old_pool_list, send_incremental_snap):
   stop_point = input("stop_pint push enter\n")
   for i in range(0, len(pool_list)):
-    logger.info('start sending   snap : '+ old_pool_list[i] + ' inctrement ' + new_pool_list[i])
-    logger.info('start recieving snap : '+ recv_root_pool+pool_list[i][:-1])
-    p1 = subprocess.Popen(['zfs','send','-v','-i', old_pool_list[i], new_pool_list[i]], stdout=subprocess.PIPE)
-    p2 = subprocess.Popen(['zfs','receive','-v','-F', recv_root_pool+pool_list[i][:-1]], stdin=p1.stdout, stdout=subprocess.PIPE)
-    output = p2.communicate()[0]
-    exit_code = p2.returncode
-    exit_on_error(exit_code)
-    logger.info('transferred'+ str(recv_root_pool+pool_list[i][:-1]) + 'return code='+ str(exit_code))
+      if send_incremental_snap[i] == True:
+        logger.info('start sending   snap : '+ old_pool_list[i] + ' inctrement ' + new_pool_list[i])
+        logger.info('start recieving snap : '+ recv_root_pool+pool_list[i][:-1])
+        p1 = subprocess.Popen(['zfs','send','-v','-i', old_pool_list[i], new_pool_list[i]], stdout=subprocess.PIPE)
+        p2 = subprocess.Popen(['zfs','receive','-v','-F', recv_root_pool+pool_list[i][:-1]], stdin=p1.stdout, stdout=subprocess.PIPE)
+        output = p2.communicate()[0]
+        exit_code = p2.returncode
+        exit_on_error(exit_code)
+        logger.info('transferred'+ str(recv_root_pool+pool_list[i][:-1]) + 'return code='+ str(exit_code))
+      else:
+        logger.info('start sending   snap : full ' + new_pool_list[i])
+        logger.info('start recieving snap : '+ recv_root_pool+pool_list[i][:-1])
+        stop_point = input("stop_pint push enter delete after check\n")
+        p1 = subprocess.Popen(['zfs','send','-v', new_pool_list[i]], stdout=subprocess.PIPE)
+        p2 = subprocess.Popen(['zfs','receive','-v','-F', recv_root_pool+pool_list[i][:-1]], stdin=p1.stdout, stdout=subprocess.PIPE)
+        output = p2.communicate()[0]
+        exit_code = p2.returncode
+        exit_on_error(exit_code)
+        logger.info('transferred'+ str(recv_root_pool+pool_list[i][:-1]) + 'return code='+ str(exit_code))
 
 def exit_on_error (exit_code):
     if exit_code != 0:
@@ -151,7 +208,7 @@ def umount_disk():
     logger.info('Umounting as truecrypt disk '+ dev_disk)
     exit_code = subprocess.call(['truecrypt', '-d', dev_disk])
     exit_on_error(exit_code)
-    
+
 def check_mounted():
   # check usb mounted or not
   all_Zpools = subprocess.getoutput(["zpool list -H -o name"])
@@ -169,7 +226,7 @@ def mount_disk():
             logger.debug('start  fusefs')
             exit_code = subprocess.call(['/usr/local/etc/rc.d/fusefs', 'onestart'])
             exit_on_error(exit_code)
-            
+
         logger.info('mounting as truecrypt disk '+ dev_disk)
         try:
             exit_code = subprocess.call(['truecrypt', '--filesystem=none', '--slot=1', dev_disk])
@@ -181,7 +238,7 @@ def mount_disk():
         logger.info('importing pool.... backup ')
         exit_code = subprocess.call(['zpool', 'import', 'backup'])
         exit_on_error(exit_code)
-    
+
     elif check_mounted() == 1:
         logger.debug('Do not need to mount')
     else:
@@ -190,8 +247,6 @@ def mount_disk():
 ##################### main block #######################
 
 mount_disk()
-
-#### send from linux or BSD
 
 all_snap = get_snap_list()
 logger.info('<all_snap> value ' + str(all_snap))
@@ -205,6 +260,12 @@ logger.info('<previos_snap_list_src> ' + str(previos_snap_list_src))
 previos_snap_list_dst = create_last_snap_list(pool_list, all_snap_dst,0)
 logger.info('<previos_snap_list_dst> ' + str(previos_snap_list_dst))
 
+############# checking pools on src
+send_incremental_snap = create_pool_list_flag(pool_list, all_snap_src)
+logger.info(' <send_incremental_snap>'+ str(send_incremental_snap))
+stop_point = input("stop_pint push enter delete after check\n")
+
+
 # check snapshots on disk and PC
 if len(previos_snap_list_src) != len(previos_snap_list_dst):
     logger.error('number of snapshots different on disk and PC')
@@ -212,13 +273,13 @@ if len(previos_snap_list_src) != len(previos_snap_list_dst):
 
 if dest_SYS == 'backup':
     logger.info('===== direction: '+ OS_type + '--->' + 'usb disk')
-    
+
     # check snapshots on disk and PC
     for i in range(len(previos_snap_list_src)):
         if previos_snap_list_src[i].replace(src_SYS,'') != previos_snap_list_dst[i].replace(dest_SYS,''):
             logger.error('previous snaps on disk and PC different')
             exit(201)
-     
+
     create_new_snap(root_pool, pool_list)
     all_snap = get_snap_list()
     logger.debug('<all_snap> value ' + str(all_snap))
@@ -226,39 +287,39 @@ if dest_SYS == 'backup':
     logger.debug('<all_snap> value ' + str(all_snap))
     new_snap_list = create_last_snap_list(pool_list, all_snap,0)
     logger.info('<new_snap_list> ' + str(new_snap_list))
-    
+
 elif dest_SYS == root_pool:
     logger.info('===== direction: '+ 'usb disk' + '--->' + OS_type)
-    
+
     # check snapshots on disk and PC
     for i in range(len(previos_snap_list_src)):
         if previos_snap_list_src[i].replace(src_SYS,'') == previos_snap_list_dst[i].replace(dest_SYS,''):
             logger.info('previous snaps on disk and PC identical - nothing to do')
             umount_disk()
             exit(0)
-    
+
     new_snap_list = previos_snap_list_src
     logger.debug('<new_snap_list> ' + str(new_snap_list))
     # searching  previos_snap_list_dst on USB
     previos_snap_list_src = []
     for searching_snap in previos_snap_list_dst:
         previos_snap_list_src.append(searching_snap.replace(dest_SYS,src_SYS))
-        
+
     for searching_snap in previos_snap_list_src:
         if searching_snap in all_snap_src:
             # everything OK
             pass
-            
+
         else:
             logger.error('last snaps on OS not found on USB, exit')
             umount_disk()
             exit(201)
-            
+
     logger.debug('<previos_snap_list_src> ' + str(previos_snap_list_src))
     stop_point = input("stop_pint push enter\n")
-    
+
 logger.info('===== send snap  ======')
-send_snap(dest_SYS,pool_list,new_snap_list,previos_snap_list_src)
+send_snap(dest_SYS,pool_list,new_snap_list,previos_snap_list_src, send_incremental_snap)
 
 umount_disk()
 logger.info( "----------- END ------------" )

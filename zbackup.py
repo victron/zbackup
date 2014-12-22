@@ -6,11 +6,8 @@
 
 # TODO : exceptions 
 # TODO : check mounted disk or not, partly DONE
-# DONE : find last snap on os and find same on disk, and rebuild send function
-# TODO : Global variables, partly DONE
 # TODO : check if there is snap on disk, if not import it fully
-# DONE : config File
-# TODO : moduler
+# TODO : moduler, DONE need checking
 
 
 import subprocess
@@ -18,6 +15,10 @@ import logging
 import argparse
 import configparser
 
+from zbackup_lib import *
+
+############## constant values #################
+config_file = 'zbackup.ini'
 
 
 ############ flags
@@ -42,7 +43,7 @@ if arg.quiet:
     # logging.ERROR
     # CRITICAL = 50
 # elif args.verbosity <= 2:
-#    logging_level = 20
+# logging_level = 20
 # logging.INFO
 # logging.WARNING = 30
 elif arg.verbosity >= 3:
@@ -64,17 +65,12 @@ logger = logging.getLogger(__name__)
 
 logger.info("----------- start working ------------")
 
-############## constant values #################
-config_file = 'zbackup.ini'
-
-
-
 ############### read config file ################
 config = configparser.ConfigParser()
 config.read(config_file)
-keyword_snap = config.get('DEFAULT','keyword',fallback=None)
-pool_list = config.get('DEFAULT', 'pools',fallback='/test@ /home@ /home/vic@').strip().split()
-dev_disk = config.get('USB device','partuuid', fallback=None)
+keyword_snap = config.get('DEFAULT', 'keyword', fallback=None)
+pool_list = config.get('DEFAULT', 'pools', fallback='/test@ /home@ /home/vic@').strip().split()
+dev_disk = config.get('USB device', 'partuuid', fallback=None)
 disk_pool = config.get('USB device', 'backup_pool', fallback='backup')
 
 logger.debug('------ read config file {0} --------'.format(config_file))
@@ -84,23 +80,24 @@ logger.debug('dev_disk (partuuid) = {0}'.format(dev_disk))
 logger.debug('disk_pool = {0}'.format(disk_pool))
 
 ### search zpool guid in config file and implement appropriate config section
-#Linux_zpool = "rpool"
-#FreeBSD_zpool = "zroot-n"
-zpool_get_guid = subprocess.getoutput('zpool get -p guid').split()
+# Linux_zpool = "rpool"
+# FreeBSD_zpool = "zroot-n"
+zpool_get_guid = subprocess.getoutput('zpool get guid').split()
 logger.debug('zpool_get_guid = {0}'.format(str(zpool_get_guid)))
+
 for i in config.sections():
     if not i.startswith('host'):
         continue
-    if config.get(i, 'guid', fallback=None) == zpool_get_guid[6]:
-        root_pool = config.get(i, 'root_pool', fallback=None)
+    logger.debug('check config file section= {0}, guid= {1}'.format(i, config.get(i, 'guid')))
+    if config.get(i, 'guid') in zpool_get_guid:
+        root_pool_index = zpool_get_guid.index(config.get(i, 'guid'))-2
+        root_pool = zpool_get_guid[root_pool_index]
+        #root_pool = config.get(i, 'root_pool', fallback=None)
         break
 else:
-    logger.critical('there are no guid {0} in config file, exit...'.format(zpool_get_guid[6]))
+    logger.critical('there are no any guid from config file, in \'zpool get guid\' output\nexit...')
     exit(202)
-
 logger.debug('root_pool = {0}'.format(root_pool))
-
-
 
 ## OS type  
 OS_type = subprocess.getoutput(["uname"])
@@ -154,145 +151,6 @@ stop_point = input("stop_pint push enter\n")
 current_date = subprocess.getoutput(['date +"%Y-%m-%d"'])
 logger.debug('system date ' + current_date)
 
-
-def get_snap_list():
-    # get snapshots list
-    all_snap = subprocess.getoutput(["zfs list -H -o name -s name -t snapshot"])
-    all_snap = all_snap.split('\n')
-    logger.debug('<all_snap> snap list, system return  ' + str(all_snap))
-    return all_snap
-
-
-def search_in_list(search_str, search_list):
-    # search substring in all list, and return a list with findings
-    out_list = []
-    for i in search_list:
-        if i.find(search_str) != -1:
-            out_list.append(i)
-    return out_list
-
-
-def check_in_list(search_str, search_list):
-    # return True if search_str present in search_list
-    flag = False
-    for i in search_list:
-        if i.find(search_str) != -1:
-            flag = True
-    return flag
-
-
-def create_pool_list_flag(pool_list, snap_list):
-    # create list of pools which not present in snap_list
-    pool_list_flag = []
-    for i in pool_list:
-        pool_list_flag.append(check_in_list(i, snap_list))
-    return pool_list_flag
-
-
-def find_later_snap(list_snap, last_or_previous):
-    # return the latest snapshot
-    list_snap = search_in_list(keyword_snap, list_snap)
-    list_snap.sort(reverse=True)
-    return list_snap[last_or_previous]
-
-
-def create_last_snap_list(pool_list, snap_list, last_or_previous):
-    # create list of last snapshots, needed to process
-    latest_snap = []
-    for i in pool_list:
-        # last_or_previous == 0 -> it means last snap
-        # last_or_previous == 1 -> it means previous before last snap
-        latest_snap.append(find_later_snap(search_in_list(i, snap_list), last_or_previous))
-    return latest_snap
-
-
-def create_new_snap(root_pool, pool_list):
-    # create new snapshots
-    stop_point = input("stop_pint push enter\n")
-    for i in pool_list:
-        logger.info('call to create snapshot ' + root_pool + i + current_date)
-        exit_code = subprocess.call(['zfs', 'snapshot', root_pool + i + current_date])
-        exit_on_error(exit_code)
-        logger.info(root_pool + i + current_date + '....created  ' + str(exit_code))
-
-
-def send_snap(recv_root_pool, pool_list, new_pool_list, old_pool_list, send_incremental_snap):
-    stop_point = input("stop_pint push enter\n")
-    for i in range(0, len(pool_list)):
-        if send_incremental_snap[i] == True:
-            logger.info('start sending   snap : ' + old_pool_list[i] + ' inctrement ' + new_pool_list[i])
-            logger.info('start recieving snap : ' + recv_root_pool + pool_list[i][:-1])
-            p1 = subprocess.Popen(['zfs', 'send', '-v', '-i', old_pool_list[i], new_pool_list[i]],
-                                  stdout=subprocess.PIPE)
-            p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', recv_root_pool + pool_list[i][:-1]], stdin=p1.stdout,
-                                  stdout=subprocess.PIPE)
-            output = p2.communicate()[0]
-            exit_code = p2.returncode
-            exit_on_error(exit_code)
-            logger.info('transferred' + str(recv_root_pool + pool_list[i][:-1]) + 'return code=' + str(exit_code))
-        else:
-            logger.info('start sending   snap : full ' + new_pool_list[i])
-            logger.info('start recieving snap : ' + recv_root_pool + pool_list[i][:-1])
-            stop_point = input("stop_pint push enter delete after check\n")
-            p1 = subprocess.Popen(['zfs', 'send', '-v', new_pool_list[i]], stdout=subprocess.PIPE)
-            p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', recv_root_pool + pool_list[i][:-1]], stdin=p1.stdout,
-                                  stdout=subprocess.PIPE)
-            output = p2.communicate()[0]
-            exit_code = p2.returncode
-            exit_on_error(exit_code)
-            logger.info('transferred' + str(recv_root_pool + pool_list[i][:-1]) + 'return code=' + str(exit_code))
-
-
-def exit_on_error(exit_code):
-    if exit_code != 0:
-        logger.error('exit... system return code...' + str(exit_code))
-        exit(exit_code)
-
-
-def umount_disk():
-    logger.info('exporting pool.... backup ')
-    exit_code = subprocess.call(['zpool', 'export', 'backup'])
-    exit_on_error(exit_code)
-    logger.info('Umounting as truecrypt disk ' + dev_disk)
-    exit_code = subprocess.call(['truecrypt', '-d', dev_disk])
-    exit_on_error(exit_code)
-
-
-def check_mounted():
-    # check usb mounted or not
-    all_Zpools = subprocess.getoutput(["zpool list -H -o name"])
-    all_Zpools = all_Zpools.split('\n')
-    logger.debug('<all_Zpools> in system  ' + str(all_Zpools))
-    if 'backup' in all_Zpools:
-        logger.info('Zpool backup already  imported into system')
-        return 1
-    else:
-        return 0
-
-
-def mount_disk():
-    if check_mounted() == 0:
-        if OS_type == 'FreeBSD':
-            logger.debug('start  fusefs')
-            exit_code = subprocess.call(['/usr/local/etc/rc.d/fusefs', 'onestart'])
-            exit_on_error(exit_code)
-
-        logger.info('mounting as truecrypt disk ' + dev_disk)
-        try:
-            exit_code = subprocess.call(['truecrypt', '--filesystem=none', '--slot=1', dev_disk])
-            exit_on_error(exit_code)
-        except:
-            logger.error('unknow exeption... ... exit')
-            exit(25)
-
-        logger.info('importing pool.... backup ')
-        exit_code = subprocess.call(['zpool', 'import', 'backup'])
-        exit_on_error(exit_code)
-
-    elif check_mounted() == 1:
-        logger.debug('Do not need to mount')
-    else:
-        exit_on_error(202)
 
 ##################### main block #######################
 

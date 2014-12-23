@@ -3,7 +3,10 @@
 # $Date$
 
 import subprocess
-#import logging
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def get_snap_list():
     # get snapshots list
@@ -39,39 +42,12 @@ def create_pool_list_flag(pool_list, snap_list):
     return pool_list_flag
 
 
-def find_later_snap(list_snap, last_or_previous):
-    # return the latest snapshot
-    list_snap = search_in_list(keyword_snap, list_snap)
-    list_snap.sort(reverse=True)
-    return list_snap[last_or_previous]
-
-
-def create_last_snap_list(pool_list, snap_list, last_or_previous):
-    # create list of last snapshots, needed to process
-    latest_snap = []
-    for i in pool_list:
-        # last_or_previous == 0 -> it means last snap
-        # last_or_previous == 1 -> it means previous before last snap
-        latest_snap.append(find_later_snap(search_in_list(i, snap_list), last_or_previous))
-    return latest_snap
-
-
-def create_new_snap(root_pool, pool_list):
-    # create new snapshots
-    stop_point = input("stop_pint push enter\n")
-    for i in pool_list:
-        logger.info('call to create snapshot ' + root_pool + i + current_date)
-        exit_code = subprocess.call(['zfs', 'snapshot', root_pool + i + current_date])
-        exit_on_error(exit_code)
-        logger.info(root_pool + i + current_date + '....created  ' + str(exit_code))
-
-
 def send_snap(recv_root_pool, pool_list, new_pool_list, old_pool_list, send_incremental_snap):
     stop_point = input("stop_pint push enter\n")
     for i in range(0, len(pool_list)):
-        if send_incremental_snap[i] == True:
-            logger.info('start sending   snap : ' + old_pool_list[i] + ' inctrement ' + new_pool_list[i])
-            logger.info('start recieving snap : ' + recv_root_pool + pool_list[i][:-1])
+        if send_incremental_snap[i]:
+            logger.info('start sending   snap : ' + old_pool_list[i] + ' increment ' + new_pool_list[i])
+            logger.info('start receiving snap : ' + recv_root_pool + pool_list[i][:-1])
             p1 = subprocess.Popen(['zfs', 'send', '-v', '-i', old_pool_list[i], new_pool_list[i]],
                                   stdout=subprocess.PIPE)
             p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', recv_root_pool + pool_list[i][:-1]], stdin=p1.stdout,
@@ -82,7 +58,7 @@ def send_snap(recv_root_pool, pool_list, new_pool_list, old_pool_list, send_incr
             logger.info('transferred' + str(recv_root_pool + pool_list[i][:-1]) + 'return code=' + str(exit_code))
         else:
             logger.info('start sending   snap : full ' + new_pool_list[i])
-            logger.info('start recieving snap : ' + recv_root_pool + pool_list[i][:-1])
+            logger.info('start receiving snap : ' + recv_root_pool + pool_list[i][:-1])
             stop_point = input("stop_pint push enter delete after check\n")
             p1 = subprocess.Popen(['zfs', 'send', '-v', new_pool_list[i]], stdout=subprocess.PIPE)
             p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', recv_root_pool + pool_list[i][:-1]], stdin=p1.stdout,
@@ -99,7 +75,7 @@ def exit_on_error(exit_code):
         exit(exit_code)
 
 
-def umount_disk():
+def umount_disk(dev_disk):
     logger.info('exporting pool.... backup ')
     exit_code = subprocess.call(['zpool', 'export', 'backup'])
     exit_on_error(exit_code)
@@ -110,19 +86,19 @@ def umount_disk():
 
 def check_mounted():
     # check usb mounted or not
-    all_Zpools = subprocess.getoutput(["zpool list -H -o name"])
-    all_Zpools = all_Zpools.split('\n')
-    logger.debug('<all_Zpools> in system  ' + str(all_Zpools))
-    if 'backup' in all_Zpools:
+    all_zpools = subprocess.getoutput(["zpool list -H -o name"])
+    all_zpools = all_zpools.split('\n')
+    logger.debug('<all_Zpools> in system  %s', all_zpools)
+    if 'backup' in all_zpools:
         logger.info('Zpool backup already  imported into system')
         return 1
     else:
         return 0
 
 
-def mount_disk():
+def mount_disk(os_type, dev_disk):
     if check_mounted() == 0:
-        if OS_type == 'FreeBSD':
+        if os_type == 'FreeBSD':
             logger.debug('start  fusefs')
             exit_code = subprocess.call(['/usr/local/etc/rc.d/fusefs', 'onestart'])
             exit_on_error(exit_code)
@@ -132,7 +108,7 @@ def mount_disk():
             exit_code = subprocess.call(['truecrypt', '--filesystem=none', '--slot=1', dev_disk])
             exit_on_error(exit_code)
         except:
-            logger.error('unknow exeption... ... exit')
+            logger.critical('unknow exeption... ... exit')
             exit(25)
 
         logger.info('importing pool.... backup ')
@@ -143,3 +119,31 @@ def mount_disk():
         logger.debug('Do not need to mount')
     else:
         exit_on_error(202)
+
+
+def create_new_snap(root_pool, pool_list, current_date):
+    # create new snapshots
+    stop_point = input("stop_pint push enter\n")
+    for i in pool_list:
+        logger.info('call to create snapshot ' + root_pool + i + current_date)
+        exit_code = subprocess.call(['zfs', 'snapshot', root_pool + i + current_date])
+        exit_on_error(exit_code)
+        logger.info(root_pool + i + current_date + '....created  ' + str(exit_code))
+
+
+def create_last_snap_list(keyword_snap, pool_list, snap_list, last_or_previous):
+    # create list of last snapshots, needed to process
+    latest_snap = []
+    for i in pool_list:
+        # last_or_previous == 0 -> it means last snap
+        # last_or_previous == 1 -> it means previous before last snap
+        latest_snap.append(find_later_snap(keyword_snap, search_in_list(i, snap_list), last_or_previous))
+    return latest_snap
+
+
+def find_later_snap(keyword_snap, list_snap, last_or_previous):
+    # return the latest snapshot
+    list_snap = search_in_list(keyword_snap, list_snap)
+    list_snap.sort(reverse=True)
+    return list_snap[last_or_previous]
+

@@ -18,10 +18,9 @@ from zbackup_lib2 import *
 
 # ############# constant values #################
 config_file = 'zbackup.ini'
+atempts_to_mount = 3
 
 
-# ########### flags
-send_incremental_snap = []
 # ################ command line arguments ###########################
 help_info = 'snapshots sending direction to usb or os'
 parser = argparse.ArgumentParser(description='Arguments from command line')
@@ -36,7 +35,7 @@ arg_group_v_q.add_argument("-q", "--quiet", action="store_true",
                            help='be quiet, only CRITICAL logs')
 arg = parser.parse_args()
 
-print(arg.verbosity)
+# print(arg.verbosity)
 if arg.quiet:
     logging_level = 40
     # logging.ERROR
@@ -67,14 +66,11 @@ logger.info("----------- start working ------------")
 # ############## read config file ################
 config = configparser.ConfigParser()
 config.read(config_file)
-keyword_snap = config.get('DEFAULT', 'keyword', fallback=None)
-pool_list = config.get('DEFAULT', 'pools', fallback='/test@ /home@ /home/vic@').strip().split()
+
 dev_disk = config.get('USB device', 'partuuid', fallback=None)
 disk_pool = config.get('USB device', 'backup_pool', fallback='backup')
 
 logger.debug('------ read config file {0} --------'.format(config_file))
-logger.debug('keyword_snap= {0}'.format(keyword_snap))
-logger.debug('pool_list= {0}'.format(str(pool_list)))
 logger.debug('dev_disk (partuuid) = {0}'.format(dev_disk))
 logger.debug('disk_pool = {0}'.format(disk_pool))
 
@@ -113,16 +109,15 @@ else:
     logger.error('UNknow OS ' + OS_type)
     exit(202)
 
-stop_point = input("stop_pint push enter\n")
 # check USB connection  
-atempts = 3
-for i in range(atempts):
+
+for i in range(atempts_to_mount):
     exit_code = subprocess.call(['ls', dev_disk])
     if exit_code == 0:
         break
     logger.error("not found " + dev_disk)
     print("device " + dev_disk + " not found. \nConnect USB disk...")
-    null_val = input('and push enter... ' + str(atempts - i))
+    null_val = input('and push enter... ' + str(atempts_to_mount - i))
 # noinspection PyUnboundLocalVariable
 if exit_code != 0:
     print("device " + dev_disk + " not found. Connect disk...")
@@ -130,23 +125,20 @@ if exit_code != 0:
 
 # ############## set direction according command line options ###########
 if arg.direction == 'usb':
-    dest_SYS = disk_pool
+    dst_SYS = disk_pool
     src_SYS = root_pool
 elif arg.direction == 'os':
-    dest_SYS = root_pool
+    dst_SYS = root_pool
     src_SYS = disk_pool
 else:
     logger.error('wrong direction exit ... ')
     exit(201)
 
 # noinspection PyUnboundLocalVariable
-logger.debug('<dest_SYS> ' + dest_SYS)
+logger.debug('<dst_SYS> ' + dst_SYS)
 # noinspection PyUnboundLocalVariable
 logger.debug('<src_SYS> ' + src_SYS)
-logger.info('data sets list to work ' + str(pool_list))
-logger.debug('keyword for search MY snapshots ' + keyword_snap)
 
-stop_point = input("stop_pint push enter\n")
 
 # ================================================
 
@@ -158,105 +150,49 @@ logger.debug('system date ' + current_date)
 mount_disk(OS_type, dev_disk)
 
 for volume in config.get(host_config, 'volume').split():
+    logger.debug('<volume> = {0}'.format(volume))
+    volume_dst_dict = get_specific_snap_list(dst_SYS, volume)
+    volume_src_dict = get_specific_snap_list(src_SYS, volume)
+    logger.debug('<volume_src_dict> {0}'.format(volume_src_dict))
+    logger.debug('<volume_dst_dict> {0}'.format(volume_dst_dict))
+    previous_same_snap = same_and_max_val_in_dicts(volume_src_dict, volume_dst_dict)
+    logger.info('<previous_same_snap> {0}'.format(previous_same_snap))
 
-    if get_specific_snap_list(src_SYS,volume) == None:
-        # TODO: create snap and send fully
+    if previous_same_snap is None:
+        logger.debug('there are no SAME snaps on volume {0}'.format(volume))
+        logger.debug('create snap {0}'.format(src_SYS + volume + '@' + current_date))
+        stop_point = input("stop_pint push enter\n")
+        continue_or_exit(query_yes_no('create snap {0} ?'.format(src_SYS + volume + '@' + current_date)))
+        exit_code = subprocess.call(['zfs', 'snapshot', src_SYS + volume + '@' + current_date])
+        exit_on_error(exit_code)
+        logger.info('start sending   FULL snap {0}'.format(src_SYS + volume + '@' + current_date))
+        logger.info('start receiving FULL snap {0}'.format(dst_SYS + volume + '@' + current_date))
+        stop_point = input("stop_pint push enter delete after check\n")
+        p1 = subprocess.Popen(['zfs', 'send', '-v', src_SYS + volume + '@' + current_date], stdout=subprocess.PIPE)
+        p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_SYS + volume + '@' + current_date],
+                              stdin=p1.stdout,
+                              stdout=subprocess.PIPE)
+        output = p2.communicate()[0]
+        exit_code = p2.returncode
+        exit_on_error(exit_code)
     else:
-        volume_src_dict = get_specific_snap_list(dest_SYS, volume)
-        volume_dst_dict = get_specific_snap_list(src_SYS, volume)
-        if same_and_max_val_in_dicts(volume_dst_dict, volume_src_dict) == None:
-            # TODO:  create snap and send fully
-        else:
-            # TODO: create snap and send INCREMENTAL
-
-            exit_code = subprocess.call(['zfs', 'snapshot', src_SYS + volume +'@' + current_date])
-            exit_on_error(exit_code)
-            p1 = subprocess.Popen(['zfs', 'send', '-v', '-i', src_SYS+volume + '@' + current_date,cstdout=subprocess.PIPE)
-            p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dest_SYS + volume + '@' + current_date, stdin=p1.stdout,
-                                  stdout=subprocess.PIPE)
-            output = p2.communicate()[0]
-            exit_code = p2.returncode
-            exit_on_error(exit_code)
-
-
-
-
-
-
-# =========== old block
-all_snap = get_snap_list()
-logger.info('<all_snap> value ' + str(all_snap))
-logger.info('===== prepare lists ======')
-all_snap_src = search_in_list(src_SYS, all_snap)
-logger.debug('<all_snap_src> value ' + str(all_snap_src))
-all_snap_dst = search_in_list(dest_SYS, all_snap)
-logger.debug('<all_snap_dst> value ' + str(all_snap_dst))
-previos_snap_list_src = create_last_snap_list(keyword_snap, pool_list, all_snap_src, 0)
-logger.info('<previos_snap_list_src> ' + str(previos_snap_list_src))
-previos_snap_list_dst = create_last_snap_list(keyword_snap, pool_list, all_snap_dst, 0)
-logger.info('<previos_snap_list_dst> ' + str(previos_snap_list_dst))
-
-# ############ checking pools on src
-# noinspection PyRedeclaration
-send_incremental_snap = create_pool_list_flag(pool_list, all_snap_src)
-logger.info(' <send_incremental_snap>' + str(send_incremental_snap))
-stop_point = input("stop_pint push enter delete after check\n")
-
-
-# check snapshots on disk and PC
-if len(previos_snap_list_src) != len(previos_snap_list_dst):
-    logger.error('number of snapshots different on disk and PC')
-    exit(201)
-
-if dest_SYS == 'backup':
-    logger.info('===== direction: ' + OS_type + '--->' + 'usb disk')
-
-    # check snapshots on disk and PFC
-    for i in range(len(previos_snap_list_src)):
-        if previos_snap_list_src[i].replace(src_SYS, '') != previos_snap_list_dst[i].replace(dest_SYS, ''):
-            logger.error('previous snaps on disk and PC different')
-            exit(201)
-
-    create_new_snap(root_pool, pool_list, current_date)
-    all_snap = get_snap_list()
-    logger.debug('<all_snap> value ' + str(all_snap))
-    all_snap = search_in_list(root_pool, all_snap)
-    logger.debug('<all_snap> value ' + str(all_snap))
-    new_snap_list = create_last_snap_list(keyword_snap, pool_list, all_snap, 0)
-    logger.info('<new_snap_list> ' + str(new_snap_list))
-
-elif dest_SYS == root_pool:
-    logger.info('===== direction: ' + 'usb disk' + '--->' + OS_type)
-
-    # check snapshots on disk and PC
-    for i in range(len(previos_snap_list_src)):
-        if previos_snap_list_src[i].replace(src_SYS, '') == previos_snap_list_dst[i].replace(dest_SYS, ''):
-            logger.info('previous snaps on disk and PC identical - nothing to do')
-            umount_disk(dev_disk)
-            exit(0)
-
-    new_snap_list = previos_snap_list_src
-    logger.debug('<new_snap_list> ' + str(new_snap_list))
-    # searching  previos_snap_list_dst on USB
-    previos_snap_list_src = []
-    for searching_snap in previos_snap_list_dst:
-        previos_snap_list_src.append(searching_snap.replace(dest_SYS, src_SYS))
-
-    for searching_snap in previos_snap_list_src:
-        if searching_snap in all_snap_src:
-            # everything OK
-            pass
-
-        else:
-            logger.error('last snaps on OS not found on USB, exit')
-            umount_disk(dev_disk)
-            exit(201)
-
-    logger.debug('<previos_snap_list_src> ' + str(previos_snap_list_src))
-    stop_point = input("stop_pint push enter\n")
-
-logger.info('===== send snap  ======')
-send_snap(dest_SYS, pool_list, new_snap_list, previos_snap_list_src, send_incremental_snap)
+        logger.debug('found SAME snaps on volume {0}  working in INCREMENTAL mode'.format(volume))
+        logger.debug('create snap {0}'.format(src_SYS + volume + '@' + current_date))
+        stop_point = input("stop_pint push enter\n")
+        exit_code = subprocess.call(['zfs', 'snapshot', src_SYS + volume + '@' + current_date])
+        exit_on_error(exit_code)
+        logger.info('start sending INCREMENTAL snaps {0} and {1}'.format(previous_same_snap[0],
+                                                                         src_SYS + volume + '@' + current_date))
+        logger.info('start receiving INCREMENTAL snap {0}'.format(dst_SYS + volume + '@' + current_date))
+        p1 = subprocess.Popen(
+            ['zfs', 'send', '-v', '-i', previous_same_snap[0], src_SYS + volume + '@' + current_date],
+            stdout=subprocess.PIPE)
+        p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_SYS + volume + '@' + current_date],
+                              stdin=p1.stdout,
+                              stdout=subprocess.PIPE)
+        output = p2.communicate()[0]
+        exit_code = p2.returncode
+        exit_on_error(exit_code)
 
 umount_disk(dev_disk)
 logger.info("----------- END ------------")

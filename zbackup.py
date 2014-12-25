@@ -13,6 +13,7 @@ import argparse
 import configparser
 
 from zbackup_lib import *
+from zbackup_lib2 import *
 
 
 # ############# constant values #################
@@ -78,8 +79,6 @@ logger.debug('dev_disk (partuuid) = {0}'.format(dev_disk))
 logger.debug('disk_pool = {0}'.format(disk_pool))
 
 # ## search zpool guid in config file and implement appropriate config section
-# Linux_zpool = "rpool"
-# FreeBSD_zpool = "zroot-n"
 zpool_get_guid = subprocess.getoutput('zpool get guid').split()
 logger.debug('zpool_get_guid = {0}'.format(str(zpool_get_guid)))
 
@@ -90,6 +89,7 @@ for i in config.sections():
     if config.get(i, 'guid') in zpool_get_guid:
         root_pool_index = zpool_get_guid.index(config.get(i, 'guid')) - 2
         root_pool = zpool_get_guid[root_pool_index]
+        host_config = i
         # root_pool = config.get(i, 'root_pool', fallback=None)
         break
 else:
@@ -157,6 +157,33 @@ logger.debug('system date ' + current_date)
 
 mount_disk(OS_type, dev_disk)
 
+for volume in config.get(host_config, 'volume').split():
+
+    if get_specific_snap_list(src_SYS,volume) == None:
+        # TODO: create snap and send fully
+    else:
+        volume_src_dict = get_specific_snap_list(dest_SYS, volume)
+        volume_dst_dict = get_specific_snap_list(src_SYS, volume)
+        if same_and_max_val_in_dicts(volume_dst_dict, volume_src_dict) == None:
+            # TODO:  create snap and send fully
+        else:
+            # TODO: create snap and send INCREMENTAL
+
+            exit_code = subprocess.call(['zfs', 'snapshot', src_SYS + volume +'@' + current_date])
+            exit_on_error(exit_code)
+            p1 = subprocess.Popen(['zfs', 'send', '-v', '-i', src_SYS+volume + '@' + current_date,cstdout=subprocess.PIPE)
+            p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dest_SYS + volume + '@' + current_date, stdin=p1.stdout,
+                                  stdout=subprocess.PIPE)
+            output = p2.communicate()[0]
+            exit_code = p2.returncode
+            exit_on_error(exit_code)
+
+
+
+
+
+
+# =========== old block
 all_snap = get_snap_list()
 logger.info('<all_snap> value ' + str(all_snap))
 logger.info('===== prepare lists ======')

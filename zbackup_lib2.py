@@ -55,8 +55,9 @@ def same_and_max_val_in_dicts(dict1, dict2):
     else:
         return None
 
+
 def query_yes_no(question, default='yes'):
-    valid = {"yes": True, "y": True, "ye": True,"no": False, "n": False}
+    valid = {"yes": True, "y": True, "ye": True, "no": False, "n": False}
 
     if default is None:
         prompt = " [y/n] "
@@ -77,12 +78,11 @@ def query_yes_no(question, default='yes'):
         else:
             print("Please respond with 'yes' or 'no' ('y' or 'n').\n")
 
-def continue_or_exit(breack_action=False, debug=False):
-    if debug == True:
-        if breack_action == True:
-            logger.info('user interupt, exit...')
+
+def continue_or_exit(question, debug=False):
+    if debug:
+        if not query_yes_no(question):
+            logger.info('user interupt, exit... 101')
             exit(101)
-        else:
-            pass
     else:
-        breack_action = False
+        pass

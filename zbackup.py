@@ -6,7 +6,7 @@
 
 # TODO : exceptions 
 # TODO : check mounted disk or not, partly DONE
-# TODO : check if there is snap on disk, if not import it fully
+# TODO : check if there is snap on disk, if not import it fully need to check
 
 
 import argparse
@@ -36,21 +36,20 @@ arg_group_v_q.add_argument("-q", "--quiet", action="store_true",
 arg = parser.parse_args()
 
 # print(arg.verbosity)
+debug_flag = False
 if arg.quiet:
     logging_level = 40
     # logging.ERROR
     # CRITICAL = 50
-# elif args.verbosity <= 2:
-# logging_level = 20
-# logging.INFO
-# logging.WARNING = 30
 elif arg.verbosity >= 3:
     logging_level = 10
+    debug_flag = True
     # logging.DEBUG
     # NOTSET = 0
 else:
     logging_level = 20
-
+    # logging.INFO
+    # logging.WARNING = 30
 # #################### logging block ##################
 formatter = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logging.basicConfig(level=logging_level,
@@ -89,7 +88,9 @@ for i in config.sections():
         # root_pool = config.get(i, 'root_pool', fallback=None)
         break
 else:
-    logger.critical('there are no any guid from config file, in \'zpool get guid\' output\nexit...')
+    logger.critical('there is CRITICAL error in config file\n'
+                    'there are no any guid or host section in config file, in \'zpool get guid\' output\n'
+                    'exit...')
     exit(202)
 # noinspection PyUnboundLocalVariable
 logger.debug('root_pool = {0}'.format(root_pool))
@@ -116,8 +117,9 @@ for i in range(atempts_to_mount):
     if exit_code == 0:
         break
     logger.error("not found " + dev_disk)
-    print("device " + dev_disk + " not found. \nConnect USB disk...")
-    null_val = input('and push enter... ' + str(atempts_to_mount - i))
+    continue_or_exit('device {0} not found.\n'
+                     'Connect USB disk...\n'
+                     'atempt {1} continue or exit...'.format(dev_disk, atempts_to_mount - i), debug_flag)
 # noinspection PyUnboundLocalVariable
 if exit_code != 0:
     print("device " + dev_disk + " not found. Connect disk...")
@@ -144,30 +146,36 @@ logger.debug('<src_SYS> ' + src_SYS)
 
 current_date = subprocess.getoutput(['date +"%Y-%m-%d"'])
 logger.debug('system date ' + current_date)
+continue_or_exit('current date {0} ?'.format(current_date), debug_flag)
 
 # #################### main block #######################
 
 mount_disk(OS_type, dev_disk)
 
+# noinspection PyUnboundLocalVariable
 for volume in config.get(host_config, 'volume').split():
-    logger.debug('<volume> = {0}'.format(volume))
     volume_dst_dict = get_specific_snap_list(dst_SYS, volume)
     volume_src_dict = get_specific_snap_list(src_SYS, volume)
+    previous_same_snap = same_and_max_val_in_dicts(volume_src_dict, volume_dst_dict)
+
+    logger.debug('<volume> = {0}'.format(volume))
     logger.debug('<volume_src_dict> {0}'.format(volume_src_dict))
     logger.debug('<volume_dst_dict> {0}'.format(volume_dst_dict))
-    previous_same_snap = same_and_max_val_in_dicts(volume_src_dict, volume_dst_dict)
     logger.info('<previous_same_snap> {0}'.format(previous_same_snap))
 
     if previous_same_snap is None:
         logger.debug('there are no SAME snaps on volume {0}'.format(volume))
         logger.debug('create snap {0}'.format(src_SYS + volume + '@' + current_date))
         stop_point = input("stop_pint push enter\n")
-        continue_or_exit(query_yes_no('create snap {0} ?'.format(src_SYS + volume + '@' + current_date)))
+        continue_or_exit('create snap {0} ?'.format(src_SYS + volume + '@' + current_date), debug_flag)
+
         exit_code = subprocess.call(['zfs', 'snapshot', src_SYS + volume + '@' + current_date])
         exit_on_error(exit_code)
+
         logger.info('start sending   FULL snap {0}'.format(src_SYS + volume + '@' + current_date))
         logger.info('start receiving FULL snap {0}'.format(dst_SYS + volume + '@' + current_date))
         stop_point = input("stop_pint push enter delete after check\n")
+
         p1 = subprocess.Popen(['zfs', 'send', '-v', src_SYS + volume + '@' + current_date], stdout=subprocess.PIPE)
         p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_SYS + volume + '@' + current_date],
                               stdin=p1.stdout,
@@ -178,12 +186,15 @@ for volume in config.get(host_config, 'volume').split():
     else:
         logger.debug('found SAME snaps on volume {0}  working in INCREMENTAL mode'.format(volume))
         logger.debug('create snap {0}'.format(src_SYS + volume + '@' + current_date))
+
         stop_point = input("stop_pint push enter\n")
         exit_code = subprocess.call(['zfs', 'snapshot', src_SYS + volume + '@' + current_date])
         exit_on_error(exit_code)
+
         logger.info('start sending INCREMENTAL snaps {0} and {1}'.format(previous_same_snap[0],
                                                                          src_SYS + volume + '@' + current_date))
         logger.info('start receiving INCREMENTAL snap {0}'.format(dst_SYS + volume + '@' + current_date))
+
         p1 = subprocess.Popen(
             ['zfs', 'send', '-v', '-i', previous_same_snap[0], src_SYS + volume + '@' + current_date],
             stdout=subprocess.PIPE)

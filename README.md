@@ -19,7 +19,7 @@ with it meaning represented here, will be available for program in another block
  all general option. Here we put the names of [volumes](http://docs.oracle.com/cd/E18752_01/html/819-5461/ftyue.html), 
  witch we want to backup or transfer.
  
-####### For example:
+###### For example:
 ```
 [DEFAULT]
 volume = /test
@@ -43,7 +43,7 @@ lrwxrwxrwx 1 root root 10 гру 27 19:07 ebf6c572-c553-11e1-8897-5c260a0e9ee6 -
 lrwxrwxrwx 1 root root 10 гру 27 19:07 fa11924d-c553-11e1-8897-5c260a0e9ee6 -> ../../sdc2
 ```
 
-####### For example:
+###### For example:
 ```
 [USB device]
 partuuid = 09353f9f-c554-11e1-8897-5c260a0e9ee6

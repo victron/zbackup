@@ -4,17 +4,14 @@
 
 # NOTE: script need to call with root privileges or via "sudo"
 
-# TODO : exceptions 
-# TODO : check mounted disk or not, partly DONE
 # TODO : check if there is snap on disk, if not import it fully need to check
-
+# TODO: cannot receive incremental stream: most recent snapshot of backup/test does not match incremental source
+# TODO : cannot create snapshot 'zroot-n/test@2014-12-26': dataset already exists
 
 import argparse
 import configparser
 
 from zbackup_lib import *
-from zbackup_lib2 import *
-
 
 # ############# constant values #################
 config_file = 'zbackup.ini'
@@ -82,6 +79,7 @@ for i in config.sections():
         continue
     logger.debug('check config file section= {0}, guid= {1}'.format(i, config.get(i, 'guid')))
     if config.get(i, 'guid') in zpool_get_guid:
+        # get pool name from 'zpool get guid' output
         root_pool_index = zpool_get_guid.index(config.get(i, 'guid')) - 2
         root_pool = zpool_get_guid[root_pool_index]
         host_config = i
@@ -112,14 +110,14 @@ else:
 
 # check USB connection  
 
-for i in range(atempts_to_mount):
+for atempt in range(atempts_to_mount):
     exit_code = subprocess.call(['ls', dev_disk])
     if exit_code == 0:
         break
     logger.error("not found " + dev_disk)
     continue_or_exit('device {0} not found.\n'
                      'Connect USB disk...\n'
-                     'atempt {1} continue or exit...'.format(dev_disk, atempts_to_mount - i), debug_flag)
+                     'atempt {1} continue or exit...'.format(dev_disk, atempts_to_mount - atempt), debug_flag)
 # noinspection PyUnboundLocalVariable
 if exit_code != 0:
     print("device " + dev_disk + " not found. Connect disk...")
@@ -129,9 +127,11 @@ if exit_code != 0:
 if arg.direction == 'usb':
     dst_SYS = disk_pool
     src_SYS = root_pool
+    create_snap_flag = True
 elif arg.direction == 'os':
     dst_SYS = root_pool
     src_SYS = disk_pool
+    create_snap_flag = False
 else:
     logger.error('wrong direction exit ... ')
     exit(201)
@@ -146,7 +146,6 @@ logger.debug('<src_SYS> ' + src_SYS)
 
 current_date = subprocess.getoutput(['date +"%Y-%m-%d"'])
 logger.debug('system date ' + current_date)
-continue_or_exit('current date {0} ?'.format(current_date), debug_flag)
 
 # #################### main block #######################
 
@@ -157,53 +156,43 @@ for volume in config.get(host_config, 'volume').split():
     volume_dst_dict = get_specific_snap_list(dst_SYS, volume)
     volume_src_dict = get_specific_snap_list(src_SYS, volume)
     previous_same_snap = same_and_max_val_in_dicts(volume_src_dict, volume_dst_dict)
+    newest_src_snap = max_dict_val(volume_src_dict)
 
     logger.debug('<volume> = {0}'.format(volume))
     logger.debug('<volume_src_dict> {0}'.format(volume_src_dict))
     logger.debug('<volume_dst_dict> {0}'.format(volume_dst_dict))
     logger.info('<previous_same_snap> {0}'.format(previous_same_snap))
+    logger.info('<newest_src_snap> {0}'.format(newest_src_snap))
 
-    if previous_same_snap is None:
-        logger.debug('there are no SAME snaps on volume {0}'.format(volume))
-        logger.debug('create snap {0}'.format(src_SYS + volume + '@' + current_date))
-        stop_point = input("stop_pint push enter\n")
-        continue_or_exit('create snap {0} ?'.format(src_SYS + volume + '@' + current_date), debug_flag)
-
-        exit_code = subprocess.call(['zfs', 'snapshot', src_SYS + volume + '@' + current_date])
-        exit_on_error(exit_code)
-
-        logger.info('start sending   FULL snap {0}'.format(src_SYS + volume + '@' + current_date))
-        logger.info('start receiving FULL snap {0}'.format(dst_SYS + volume + '@' + current_date))
-        stop_point = input("stop_pint push enter delete after check\n")
-
-        p1 = subprocess.Popen(['zfs', 'send', '-v', src_SYS + volume + '@' + current_date], stdout=subprocess.PIPE)
-        p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_SYS + volume + '@' + current_date],
-                              stdin=p1.stdout,
-                              stdout=subprocess.PIPE)
-        output = p2.communicate()[0]
-        exit_code = p2.returncode
-        exit_on_error(exit_code)
+    if OS_type == 'Linux' and volume == '/tmp':
+        linux_workaround_yes = True
     else:
-        logger.debug('found SAME snaps on volume {0}  working in INCREMENTAL mode'.format(volume))
-        logger.debug('create snap {0}'.format(src_SYS + volume + '@' + current_date))
+        linux_workaround_yes = False
 
-        stop_point = input("stop_pint push enter\n")
-        exit_code = subprocess.call(['zfs', 'snapshot', src_SYS + volume + '@' + current_date])
-        exit_on_error(exit_code)
-
-        logger.info('start sending INCREMENTAL snaps {0} and {1}'.format(previous_same_snap[0],
-                                                                         src_SYS + volume + '@' + current_date))
-        logger.info('start receiving INCREMENTAL snap {0}'.format(dst_SYS + volume + '@' + current_date))
-
-        p1 = subprocess.Popen(
-            ['zfs', 'send', '-v', '-i', previous_same_snap[0], src_SYS + volume + '@' + current_date],
-            stdout=subprocess.PIPE)
-        p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_SYS + volume + '@' + current_date],
-                              stdin=p1.stdout,
-                              stdout=subprocess.PIPE)
-        output = p2.communicate()[0]
-        exit_code = p2.returncode
-        exit_on_error(exit_code)
+    if create_snap_flag:
+        create_new_snap(src_SYS, [volume], current_date, debug_flag)
+        if previous_same_snap is None:
+            logger.debug('there are no SAME snaps on volume {0}\n sending to USB'.format(volume))
+            send_snap_full(src_SYS + volume + '@' + current_date, dst_SYS + volume, debug_flag)
+        else:
+            logger.debug('found SAME snaps on volume {0}\n'
+                         'working in INCREMENTAL mode sending to USB'.format(volume))
+            send_snap_incremental(previous_same_snap[0], src_SYS + volume + '@' + current_date, dst_SYS + volume,
+                                  debug_flag)
+    elif not create_snap_flag:
+        if previous_same_snap == newest_src_snap:
+            logger.debug('nothing send on OS {0} == {1}'.format(previous_same_snap, newest_src_snap))
+        elif previous_same_snap is None:
+            logger.debug('there are no SAME snaps on volume {0}\n'
+                         'sending to OS'.format(volume))
+            linux_workaround_umount(linux_workaround_yes)
+            send_snap_full(newest_src_snap[0], dst_SYS + volume, debug_flag)
+            linux_workaround_mount(linux_workaround_yes)
+        else:
+            logger.debug('found SAME snaps on volume {0}  working in INCREMENTAL mode'.format(volume))
+            linux_workaround_umount(linux_workaround_yes)
+            send_snap_incremental(previous_same_snap[0], newest_src_snap[0], dst_SYS + volume, debug_flag)
+            linux_workaround_mount(linux_workaround_yes)
 
 umount_disk(dev_disk)
 logger.info("----------- END ------------")

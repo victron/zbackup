@@ -19,7 +19,7 @@ atempts_to_mount = 3
 
 
 # ################ command line arguments ###########################
-help_info = 'snapshots sending direction to usb or os'
+help_info = 'snapshots sending direction to \'usb\' or \'os\''
 parser = argparse.ArgumentParser(description='Arguments from command line')
 parser.add_argument('direction', action='store', type=str, help=help_info, choices=['usb', 'os'])
 

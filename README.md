@@ -12,7 +12,7 @@ Also it could be used for simple backuping procedure.
 2. backup_lib.py - functions for zbackup.py
 3. zbackup.ini - config file
 
-## Config file (zbackup.ini) consists of:
+## <a id="config_file"></a>Config file (zbackup.ini) consists of:
 * DEFAULT - block. 
 According to logic of [configparser](https://docs.python.org/3.3/library/configparser.html) all options 
 with it meaning represented here, will be available for program in another block. In this reason it the best location to put
@@ -56,11 +56,11 @@ Put there specific options for  any your hosts. Sript identify connected host by
 It gets all zfs pools on system from `zpool get guid` output
 
 ## Arguments:
-* [Positional arguments](https://docs.python.org/3.2/howto/argparse.html)
+* [Positional arguments](https://docs.python.org/3.2/howto/argparse.html#introducing-positional-arguments)
 Only two options, witch specify snapshot sending direction
   - usb - send snapshots to USB drive
   Firstly it check for same snapshots on OS and USB drive.
-  Then it creates newest snapshots on your system according to [config file](#Config file (zbackup.ini) consists of:)
+  Then it creates newest snapshots on your system according to [config file](#config_file)
   The names of new snapshots ends on output `date +"%Y-%m-%d`.
   If same snapshots not found in early step on OS and USB drive, created snapshot sensed fully on USB drive. 
   `zfs send -v <pool_src>/<volume>@<snapshot_newest> |zfs receive -v -F <pool_dst>/<volume> ` 
@@ -77,7 +77,7 @@ Only two options, witch specify snapshot sending direction
   If same snapshots not found in early step on OS and USB drive, newest snapshot sensed fully on USB drive. 
   `zfs send -v <pool_src>/<volume>@<snapshot_newest> |zfs receive -v -F <pool_dst>/<volume> ` 
   
-* [Optional arguments](https://docs.python.org/3.2/howto/argparse.html)
+* [Optional arguments](https://docs.python.org/3.2/howto/argparse.html#introducing-optional-arguments)
 currently ony one option
   - '-v', '--verbosity - turn on debug and request user confirmation before every manipulation with disk
 
@@ -90,59 +90,5 @@ In failure case request user to connect USB disk.
 After it, script attach truecrypt volume `truecrypt --filesystem=none --slot=1 /dev/gptid/<partuuid>`
 And detach it at the end of work `truecrypt -d /dev/gptid/<partuuid>`
 
-## Some useful notes about possible scenarios
-
-```
-#create key file
-truecrypt --create-keyfile /etc/disk.key
-#create container
-truecrypt --volume-type=normal -c /dev/sda1
-
-#map (attach) container
-truecrypt --filesystem=none --slot=1 /dev/da0p4
-truecrypt --filesystem=none --slot=1 /dev/gptid/09353f9f-c554-11e1-8897-5c260a0e9ee6
-# find where is it attached
-truecrypt -l
 
 
-# format filesystem inside container
-mkfs.ext4 /dev/mapper/truecrypt1
-zpool create -O mountpoint=none backup
-
-#import Zpool
-zpool import backup
-
-zfs send -i zroot-n/test@2014-06-29 zroot-n/test@2014-07-03 | zfs recv -F backup/test
-zfs send -v -i zroot-n/home@2014-06-29 zroot-n/home@2014-07-03 | zfs recv -v -F backup/home
-zfs send -v -i zroot-n/home/vic@2014-06-29 zroot-n/home/vic@2014-07-03 | zfs recv -v -F backup/home/vic
-
-zpool export backup
-truecrypt -l
-truecrypt -d /dev/da0p4
-
-
-################## on linux ######################
-truecrypt --filesystem=none --slot=1 /dev/sdb4
-zpool import backup
-zfs send -v -i backup/test@2014-06-29 backup/test@2014-07-03 | zfs recv -v -F  rpool/test
-zfs send -v -i backup/home@2014-06-29 backup/home@2014-07-03 | zfs recv -v -F  rpool/home
-zfs send -v -i backup/home/vic@2014-06-29 backup/home/vic@2014-07-03 | zfs recv -v -F  rpool/home/vic
-
-zpool export backup
-truecrypt -l
-##############################################
-/usr/local/etc/rc.d/fusefs onestart
-truecrypt --filesystem=none --slot=1 /dev/da0p4
-
- zfs snapshot -r zroot-n/home@`date "+%Y-%m-%d"`
- zfs snapshot -r zroot-n/test@`date "+%Y-%m-%d"`
- 
- 
- zfs send -v -i zroot-n/test@2014-07-03 zroot-n/test@2014-07-08 | zfs recv -v -F backup/test
- zfs send -v -R -i zroot-n/home@2014-07-03 zroot-n/home@2014-07-08 | zfs recv -v -F backup/home
- zpool export backup
- truecrypt -l
- 
- #############################################################
- zfs list -H -t snapshot -o name -s name
- ```

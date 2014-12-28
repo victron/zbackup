@@ -155,6 +155,7 @@ def continue_or_exit(question, debug=False):
 def send_snap_full(src_snap, dst_volume, debug_flag=False):
     logger.info('start sending   FULL snap {0}'.format(src_snap))
     logger.info('start receiving FULL snap on volume {0}'.format(dst_volume))
+    send_snap_test_full(src_snap, dst_volume)
     continue_or_exit('send snap {0} to volume {1} ?'.format(src_snap, dst_volume), debug_flag)
     p1 = subprocess.Popen(['zfs', 'send', '-v', src_snap], stdout=subprocess.PIPE)
     p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
@@ -166,12 +167,39 @@ def send_snap_full(src_snap, dst_volume, debug_flag=False):
 def send_snap_incremental(src_snap1, src_snap2, dst_volume, debug_flag=False):
     logger.info('start sending INCREMENTAL snaps {0} and {1}'.format(src_snap1, src_snap2))
     logger.info('start receiving INCREMENTAL snap on volume {0}'.format(dst_volume))
+    send_snap_test_incremental(src_snap1, src_snap2, dst_volume)
     continue_or_exit('send INCREMENTAL snaps {0} and {1} to volume {2} ?'.format(src_snap1, src_snap2, dst_volume),
                      debug_flag)
     p1 = subprocess.Popen(['zfs', 'send', '-v', '-i', src_snap1, src_snap2], stdout=subprocess.PIPE)
     p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
-    # TODO: check meaning
+    exit_code = p2.returncode
+    exit_on_error(exit_code)
+
+
+def send_snap_test_incremental(src_snap1, src_snap2, dst_volume):
+    p = subprocess.Popen(['zfs', 'send', '-v', '-n', '-i', src_snap1, src_snap2], stdout=subprocess.PIPE)
+    output = p.communicate()[0]  # get only stdoutput, stderror in [1]
+    logger.info('ZFS test {0}'.format(output.decode('utf-8')))
+    exit_code = p.returncode
+    exit_on_error(exit_code)
+    p1 = subprocess.Popen(['zfs', 'send', '-v', '-i', src_snap1, src_snap2], stdout=subprocess.PIPE)
+    p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', '-n', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
     output = p2.communicate()[0]
+    logger.info('ZFS test {0}'.format(output.decode('utf-8')))
+    exit_code = p2.returncode
+    exit_on_error(exit_code)
+
+
+def send_snap_test_full(src_snap1, dst_volume):
+    p = subprocess.Popen(['zfs', 'send', '-v', '-n', src_snap1], stdout=subprocess.PIPE)
+    output = p.communicate()[0]  # get only stdoutput, stderror in [1]
+    logger.info('ZFS test {0}'.format(output.decode()))
+    exit_code = p.returncode
+    exit_on_error(exit_code)
+    p1 = subprocess.Popen(['zfs', 'send', '-v', '-i', src_snap1], stdout=subprocess.PIPE)
+    p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', '-n', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
+    output = p2.communicate()[0]
+    logger.info('ZFS test {0}'.format(output.decode()))
     exit_code = p2.returncode
     exit_on_error(exit_code)
 

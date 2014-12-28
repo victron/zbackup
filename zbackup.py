@@ -4,12 +4,12 @@
 
 # NOTE: script need to call with root privileges or via "sudo"
 
-# TODO : check if there is snap on disk, if not import it fully need to check
 # TODO: cannot receive incremental stream: most recent snapshot of backup/test does not match incremental source
 # TODO : cannot create snapshot 'zroot-n/test@2014-12-26': dataset already exists
 
 import argparse
 import configparser
+import time
 
 from zbackup_lib import *
 
@@ -98,12 +98,9 @@ OS_type = subprocess.getoutput(["uname"])
 if OS_type == 'Linux':
     logger.info("OS is " + OS_type)
     dev_disk = '/dev/disk/by-partuuid/' + dev_disk
-    # TODO check and delete below string
-# root_pool = Linux_zpool
 elif OS_type == 'FreeBSD':
     logger.info("OS is " + OS_type)
     dev_disk = '/dev/gptid/' + dev_disk
-# root_pool = FreeBSD_zpool
 else:
     logger.error('UNknow OS ' + OS_type)
     exit(202)
@@ -144,7 +141,8 @@ logger.debug('<src_SYS> ' + src_SYS)
 
 # ================================================
 
-current_date = subprocess.getoutput(['date +"%Y-%m-%d"'])
+# current_date = subprocess.getoutput(['date +"%Y-%m-%d"'])
+current_date = time.strftime('%Y-%m-%d_%H:%M:%S')
 logger.debug('system date ' + current_date)
 
 # #################### main block #######################

@@ -65,6 +65,8 @@ config.read(config_file)
 
 dev_disk = config.get('USB device', 'partuuid', fallback=None)
 disk_pool = config.get('USB device', 'backup_pool', fallback='backup')
+truecrypt = config.getboolean('USB device', 'truecrypt', fallback=True)
+# config.BOOLEAN_STATES = {'yes': True, 'Yes': True, 'YES': True}
 
 logger.debug('------ read config file {0} --------'.format(config_file))
 logger.debug('dev_disk (partuuid) = {0}'.format(dev_disk))
@@ -147,7 +149,7 @@ logger.debug('system date ' + current_date)
 
 # #################### main block #######################
 
-mount_disk(OS_type, dev_disk)
+mount_disk(OS_type, dev_disk, truecrypt)
 
 # noinspection PyUnboundLocalVariable
 for volume in config.get(host_config, 'volume').split():
@@ -192,5 +194,5 @@ for volume in config.get(host_config, 'volume').split():
             send_snap_incremental(previous_same_snap[0], newest_src_snap[0], dst_SYS + volume, debug_flag)
             linux_workaround_mount(linux_workaround_yes)
 
-umount_disk(dev_disk)
+umount_disk(dev_disk, truecrypt)
 logger.info("----------- END ------------")

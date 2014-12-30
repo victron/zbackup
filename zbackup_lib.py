@@ -14,13 +14,14 @@ def exit_on_error(exit_code):
         exit(exit_code)
 
 
-def umount_disk(dev_disk):
+def umount_disk(dev_disk, truecrypt=True):
     logger.info('exporting pool.... backup ')
     exit_code = subprocess.call(['zpool', 'export', 'backup'])
     exit_on_error(exit_code)
-    logger.info('Umounting as truecrypt disk ' + dev_disk)
-    exit_code = subprocess.call(['truecrypt', '-d', dev_disk])
-    exit_on_error(exit_code)
+    if truecrypt:
+        logger.info('Umounting as truecrypt disk ' + dev_disk)
+        exit_code = subprocess.call(['truecrypt', '-d', dev_disk])
+        exit_on_error(exit_code)
 
 
 def check_mounted():
@@ -30,31 +31,32 @@ def check_mounted():
     logger.debug('<all_Zpools> in system  %s', all_zpools)
     if 'backup' in all_zpools:
         logger.info('Zpool backup already  imported into system')
-        return 1
+        return True
     else:
-        return 0
+        return False
 
 
-def mount_disk(os_type, dev_disk):
-    if check_mounted() == 0:
-        if os_type == 'FreeBSD':
-            logger.debug('start  fusefs')
-            exit_code = subprocess.call(['/usr/local/etc/rc.d/fusefs', 'onestart'])
-            exit_on_error(exit_code)
+def mount_disk(os_type, dev_disk, truecrypt=True):
+    if not check_mounted():
+        if truecrypt:
+            if os_type == 'FreeBSD':
+                logger.debug('start  fusefs')
+                exit_code = subprocess.call(['/usr/local/etc/rc.d/fusefs', 'onestart'])
+                exit_on_error(exit_code)
 
-        logger.info('mounting as truecrypt disk ' + dev_disk)
-        try:
-            exit_code = subprocess.call(['truecrypt', '--filesystem=none', '--slot=1', dev_disk])
-            exit_on_error(exit_code)
-        except:
-            logger.critical('unknow exeption... ... exit')
-            exit(25)
+            logger.info('mounting as truecrypt disk ' + dev_disk)
+            try:
+                exit_code = subprocess.call(['truecrypt', '--filesystem=none', '--slot=1', dev_disk])
+                exit_on_error(exit_code)
+            except:
+                logger.critical('unknow exeption... ... exit')
+                exit(25)
 
         logger.info('importing pool.... backup ')
         exit_code = subprocess.call(['zpool', 'import', 'backup'])
         exit_on_error(exit_code)
 
-    elif check_mounted() == 1:
+    elif check_mounted():
         logger.debug('Do not need to mount')
     else:
         exit_on_error(202)
@@ -159,7 +161,7 @@ def send_snap_full(src_snap, dst_volume, debug_flag=False):
     continue_or_exit('send snap {0} to volume {1} ?'.format(src_snap, dst_volume), debug_flag)
     p1 = subprocess.Popen(['zfs', 'send', '-v', src_snap], stdout=subprocess.PIPE)
     p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
-    output = p2.communicate()[0]
+#    output = p2.communicate()[0]
     exit_code = p2.returncode
     exit_on_error(exit_code)
 
@@ -182,12 +184,14 @@ def send_snap_test_incremental(src_snap1, src_snap2, dst_volume):
     logger.info('ZFS test {0}'.format(output.decode('utf-8')))
     exit_code = p.returncode
     exit_on_error(exit_code)
+    logger.info('----- ZFS TEST send incremental = OK ----')
     p1 = subprocess.Popen(['zfs', 'send', '-v', '-i', src_snap1, src_snap2], stdout=subprocess.PIPE)
     p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', '-n', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
     output = p2.communicate()[0]
     logger.info('ZFS test {0}'.format(output.decode('utf-8')))
     exit_code = p2.returncode
     exit_on_error(exit_code)
+    logger.info('----- ZFS TEST receive incremental = OK ----')
 
 
 def send_snap_test_full(src_snap1, dst_volume):
@@ -196,12 +200,14 @@ def send_snap_test_full(src_snap1, dst_volume):
     logger.info('ZFS test {0}'.format(output.decode()))
     exit_code = p.returncode
     exit_on_error(exit_code)
+    logger.info('----- ZFS TEST send full = OK ----')
     p1 = subprocess.Popen(['zfs', 'send', '-v', '-i', src_snap1], stdout=subprocess.PIPE)
     p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', '-n', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
     output = p2.communicate()[0]
     logger.info('ZFS test {0}'.format(output.decode()))
     exit_code = p2.returncode
     exit_on_error(exit_code)
+    logger.info('----- ZFS TEST receive full = OK ----')
 
 
 def linux_workaround_umount(execute=False):

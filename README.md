@@ -42,7 +42,8 @@ lrwxrwxrwx 1 root root 10 гру 27 19:07 09353f9f-c554-11e1-8897-5c260a0e9ee6 -
 lrwxrwxrwx 1 root root 10 гру 27 19:07 ebf6c572-c553-11e1-8897-5c260a0e9ee6 -> ../../sdc1
 lrwxrwxrwx 1 root root 10 гру 27 19:07 fa11924d-c553-11e1-8897-5c260a0e9ee6 -> ../../sdc2
 ```
-
+  - truecrypt - Does you secure your USB disk via truecrypt or not.
+  
 ###### For example:
 ```
 [USB device]
@@ -81,14 +82,7 @@ Only two options, witch specify snapshot sending direction
 currently ony one option
   - '-v', '--verbosity - turn on debug and request user confirmation before every manipulation with disk
 
-## [Truecrypt](http://en.wikipedia.org/wiki/TrueCrypt) integration
-Currently there are no option to turn off truecrypt on USB disk.
-Actually every times it check for device simply checking error code `ls /dev/disk/by-partuuid/<partuuid>` on Linux
- or `ls /dev/gptid/<partuuid>` on FreeBSD.
-In failure case request user to connect USB disk.
 
-After it, script attach truecrypt volume `truecrypt --filesystem=none --slot=1 /dev/gptid/<partuuid>`
-And detach it at the end of work `truecrypt -d /dev/gptid/<partuuid>`
 
 
 

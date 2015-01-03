@@ -8,6 +8,50 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class Volume:
+    def __init__(self, src_sys, dst_sys, root_volume, volume):
+        self.volume = volume
+        self.root_volume = root_volume
+        self.src_sys =src_sys
+        self.dst_sys = dst_sys
+        self.volume_dst_dict = get_specific_snap_list(dst_sys, volume)
+        self.volume_src_dict = get_specific_snap_list(src_sys, volume)
+        self.previous_same_snap = same_and_max_val_in_dicts(self.volume_src_dict, self.volume_dst_dict)
+        self.newest_src_snap = max_dict_val(self.volume_src_dict)
+
+#    @property
+    def __str__(self):
+        return '<self.volume> = {0}\n<self.volume_src_dict> {1}\n<self.volume_dst_dict> {2}\n' \
+               '<self.previous_same_snap> {3}\n<self.newest_src_snap> {4}' \
+            .format(self.volume, self.volume_src_dict, self.volume_dst_dict, self.previous_same_snap,
+                    self.newest_src_snap)
+    def  gatherAttrs(self):
+        attrs = []
+        for key in self.__dict__:
+            attrs.append('<{0}> = {1}'.format(key,getattr(self,key)))
+        return ', '.join(attrs)
+#    def __str__(self):
+#        return '[{0}: {1}]'.format(self.__class__.__name__, self.gatherAttrs())
+
+
+class ToOS (Volume):
+    def __init__(self, src_sys, dst_sys, root_volume, volume, debug=False):
+        Volume.__init__(self, src_sys, dst_sys, root_volume, volume)
+        self.debug = debug
+        self.dst_volume = dst_sys+volume
+
+    def snap(self):
+        send_snap(self.previous_same_snap[0], self.newest_src_snap[0], self.dst_volume, self.debug)
+
+class ToUSB (ToOS):
+    def snap(self, current_date):
+        create_new_snap(self.src_sys, [self.volume],current_date,self.debug)
+        new_volume_data = ToOS(self.src_sys,self.dst_sys, self.root_volume, self.volume,self.debug)
+        ToOS.snap(new_volume_data)
+
+
+
+
 def exit_on_error(exit_code):
     if exit_code != 0:
         logger.critical('exit... system return code...' + str(exit_code))
@@ -106,7 +150,7 @@ def same_and_max_val_in_dicts(dict1, dict2):
     # if one of args = None return None
     if dict1 is None or dict2 is None:
         logger.debug('dict {0} or {1} is None'.format(dict1, dict2))
-        return None
+        return None, None
     sorted_dict1 = sorted([(value, key) for key, value in dict1.items()], reverse=True)
     sorted_dict2 = sorted([(value, key) for key, value in dict2.items()], reverse=True)
     i_dict1 = 0
@@ -119,7 +163,7 @@ def same_and_max_val_in_dicts(dict1, dict2):
         elif sorted_dict1[i_dict1][0] < sorted_dict2[i_dict2][0]:
             i_dict2 += 1
     else:
-        return None
+        return None, None
 
 
 def query_yes_no(question, default='yes'):
@@ -153,6 +197,24 @@ def continue_or_exit(question, debug=False):
     else:
         pass
 
+def send_snap(src_snap1, src_snap2, dst_volume,debug_flag=False):
+    # in case src_snap1 == None send full snapshot
+    if src_snap1 is None:
+        continue_or_exit('send snap {0} to volume {1} ?'.format(src_snap2, dst_volume), debug_flag)
+        p1 = subprocess.Popen(['zfs', 'send', '-v', src_snap2], stdout=subprocess.PIPE)
+        p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
+        output = p2.communicate()[0]
+        exit_code = p2.returncode
+        exit_on_error(exit_code)
+    else:
+        continue_or_exit('send INCREMENTAL snaps {0} and {1} to volume {2} ?'.format(src_snap1, src_snap2, dst_volume),
+                     debug_flag)
+        p1 = subprocess.Popen(['zfs', 'send', '-v', '-i', src_snap1, src_snap2], stdout=subprocess.PIPE)
+        p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
+        output = p2.communicate()[0]  # need for below string, in oposite it return None
+        exit_code = p2.returncode
+        exit_on_error(exit_code)
+
 
 def send_snap_full(src_snap, dst_volume, debug_flag=False):
     logger.info('start sending   FULL snap {0}'.format(src_snap))
@@ -161,7 +223,7 @@ def send_snap_full(src_snap, dst_volume, debug_flag=False):
     continue_or_exit('send snap {0} to volume {1} ?'.format(src_snap, dst_volume), debug_flag)
     p1 = subprocess.Popen(['zfs', 'send', '-v', src_snap], stdout=subprocess.PIPE)
     p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
-#    output = p2.communicate()[0]
+    output = p2.communicate()[0]
     exit_code = p2.returncode
     exit_on_error(exit_code)
 
@@ -174,6 +236,7 @@ def send_snap_incremental(src_snap1, src_snap2, dst_volume, debug_flag=False):
                      debug_flag)
     p1 = subprocess.Popen(['zfs', 'send', '-v', '-i', src_snap1, src_snap2], stdout=subprocess.PIPE)
     p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
+    output = p2.communicate()[0]  # need for below string, in oposite it return None
     exit_code = p2.returncode
     exit_on_error(exit_code)
 
@@ -232,3 +295,4 @@ def linux_workaround_mount(execute=False):
         exit_on_error(exit_code)
     else:
         pass
+

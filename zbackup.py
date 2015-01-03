@@ -169,29 +169,17 @@ for volume in config.get(host_config, 'volume').split():
     else:
         linux_workaround_yes = False
 
+    # noinspection PyUnboundLocalVariable
     if create_snap_flag:
         create_new_snap(src_SYS, [volume], current_date, debug_flag)
-        if previous_same_snap is None:
-            logger.debug('there are no SAME snaps on volume {0}\n sending to USB'.format(volume))
-            send_snap_full(src_SYS + volume + '@' + current_date, dst_SYS + volume, debug_flag)
-        else:
-            logger.debug('found SAME snaps on volume {0}\n'
-                         'working in INCREMENTAL mode sending to USB'.format(volume))
-            send_snap_incremental(previous_same_snap[0], src_SYS + volume + '@' + current_date, dst_SYS + volume,
-                                  debug_flag)
-    elif not create_snap_flag:
+        send_snap(previous_same_snap[0], src_SYS + volume + '@' + current_date, dst_SYS + volume, debug_flag)
+
+    else:
         if previous_same_snap == newest_src_snap:
             logger.debug('nothing send on OS {0} == {1}'.format(previous_same_snap, newest_src_snap))
-        elif previous_same_snap is None:
-            logger.debug('there are no SAME snaps on volume {0}\n'
-                         'sending to OS'.format(volume))
-            linux_workaround_umount(linux_workaround_yes)
-            send_snap_full(newest_src_snap[0], dst_SYS + volume, debug_flag)
-            linux_workaround_mount(linux_workaround_yes)
         else:
-            logger.debug('found SAME snaps on volume {0}  working in INCREMENTAL mode'.format(volume))
             linux_workaround_umount(linux_workaround_yes)
-            send_snap_incremental(previous_same_snap[0], newest_src_snap[0], dst_SYS + volume, debug_flag)
+            send_snap(previous_same_snap[0], newest_src_snap[0], dst_SYS + volume, debug_flag)
             linux_workaround_mount(linux_workaround_yes)
 
 umount_disk(dev_disk, truecrypt)

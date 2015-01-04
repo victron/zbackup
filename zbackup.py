@@ -153,34 +153,21 @@ mount_disk(OS_type, dev_disk, truecrypt)
 
 # noinspection PyUnboundLocalVariable
 for volume in config.get(host_config, 'volume').split():
-    volume_dst_dict = get_specific_snap_list(dst_SYS, volume)
-    volume_src_dict = get_specific_snap_list(src_SYS, volume)
-    previous_same_snap = same_and_max_val_in_dicts(volume_src_dict, volume_dst_dict)
-    newest_src_snap = max_dict_val(volume_src_dict)
-
-    logger.debug('<volume> = {0}'.format(volume))
-    logger.debug('<volume_src_dict> {0}'.format(volume_src_dict))
-    logger.debug('<volume_dst_dict> {0}'.format(volume_dst_dict))
-    logger.info('<previous_same_snap> {0}'.format(previous_same_snap))
-    logger.info('<newest_src_snap> {0}'.format(newest_src_snap))
-
-    if OS_type == 'Linux' and volume == '/tmp':
-        linux_workaround_yes = True
-    else:
-        linux_workaround_yes = False
-
     # noinspection PyUnboundLocalVariable
     if create_snap_flag:
-        create_new_snap(src_SYS, [volume], current_date, debug_flag)
-        send_snap(previous_same_snap[0], src_SYS + volume + '@' + current_date, dst_SYS + volume, debug_flag)
-
+        send_volume = ToUSB(src_SYS, dst_SYS, volume, debug_flag)
+        logger.debug(send_volume)
+        send_volume.snap(current_date)
     else:
-        if previous_same_snap == newest_src_snap:
-            logger.debug('nothing send on OS {0} == {1}'.format(previous_same_snap, newest_src_snap))
+        send_volume = ToOS(src_SYS,dst_SYS,volume,debug_flag)
+        logger.debug(send_volume)
+        if send_volume.previous_same_snap == send_volume.newest_src_snap: #previous_same_snap == newest_src_snap:
+            logger.debug('nothing send on OS {0} == {1}'.format(send_volume.previous_same_snap, send_volume.newest_src_snap))
         else:
-            linux_workaround_umount(linux_workaround_yes)
-            send_snap(previous_same_snap[0], newest_src_snap[0], dst_SYS + volume, debug_flag)
-            linux_workaround_mount(linux_workaround_yes)
+            #linux_workaround_umount(linux_workaround_yes)
+            #send_snap(previous_same_snap[0], newest_src_snap[0], dst_SYS + volume, debug_flag)
+            #linux_workaround_mount(linux_workaround_yes)
+            send_volume.snap()
 
 umount_disk(dev_disk, truecrypt)
 logger.info("----------- END ------------")

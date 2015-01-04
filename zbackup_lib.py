@@ -9,9 +9,9 @@ logger = logging.getLogger(__name__)
 
 
 class Volume:
-    def __init__(self, src_sys, dst_sys, root_volume, volume):
+    def __init__(self, src_sys, dst_sys, volume):
         self.volume = volume
-        self.root_volume = root_volume
+
         self.src_sys =src_sys
         self.dst_sys = dst_sys
         self.volume_dst_dict = get_specific_snap_list(dst_sys, volume)
@@ -20,23 +20,18 @@ class Volume:
         self.newest_src_snap = max_dict_val(self.volume_src_dict)
 
 #    @property
-    def __str__(self):
-        return '<self.volume> = {0}\n<self.volume_src_dict> {1}\n<self.volume_dst_dict> {2}\n' \
-               '<self.previous_same_snap> {3}\n<self.newest_src_snap> {4}' \
-            .format(self.volume, self.volume_src_dict, self.volume_dst_dict, self.previous_same_snap,
-                    self.newest_src_snap)
     def  gatherAttrs(self):
         attrs = []
         for key in self.__dict__:
             attrs.append('<{0}> = {1}'.format(key,getattr(self,key)))
         return ', '.join(attrs)
-#    def __str__(self):
-#        return '[{0}: {1}]'.format(self.__class__.__name__, self.gatherAttrs())
+    def __str__(self):
+        return '[{0}: {1}]'.format(self.__class__.__name__, self.gatherAttrs())
 
 
 class ToOS (Volume):
-    def __init__(self, src_sys, dst_sys, root_volume, volume, debug=False):
-        Volume.__init__(self, src_sys, dst_sys, root_volume, volume)
+    def __init__(self, src_sys, dst_sys, volume, debug=False):
+        Volume.__init__(self, src_sys, dst_sys, volume)
         self.debug = debug
         self.dst_volume = dst_sys+volume
 
@@ -46,9 +41,9 @@ class ToOS (Volume):
 class ToUSB (ToOS):
     def snap(self, current_date):
         create_new_snap(self.src_sys, [self.volume],current_date,self.debug)
-        new_volume_data = ToOS(self.src_sys,self.dst_sys, self.root_volume, self.volume,self.debug)
+        new_volume_data = ToOS(self.src_sys,self.dst_sys, self.volume,self.debug)
         ToOS.snap(new_volume_data)
-
+#        send_snap(new_volume_data.previous_same_snap[0], new_volume_data.newest_src_snap[0], new_volume_data.dst_volume, new_volume_data.debug)
 
 
 
@@ -202,7 +197,7 @@ def send_snap(src_snap1, src_snap2, dst_volume,debug_flag=False):
     if src_snap1 is None:
         continue_or_exit('send snap {0} to volume {1} ?'.format(src_snap2, dst_volume), debug_flag)
         p1 = subprocess.Popen(['zfs', 'send', '-v', src_snap2], stdout=subprocess.PIPE)
-        p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
+        p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', '-n', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
         output = p2.communicate()[0]
         exit_code = p2.returncode
         exit_on_error(exit_code)
@@ -210,7 +205,7 @@ def send_snap(src_snap1, src_snap2, dst_volume,debug_flag=False):
         continue_or_exit('send INCREMENTAL snaps {0} and {1} to volume {2} ?'.format(src_snap1, src_snap2, dst_volume),
                      debug_flag)
         p1 = subprocess.Popen(['zfs', 'send', '-v', '-i', src_snap1, src_snap2], stdout=subprocess.PIPE)
-        p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
+        p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', '-n', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
         output = p2.communicate()[0]  # need for below string, in oposite it return None
         exit_code = p2.returncode
         exit_on_error(exit_code)

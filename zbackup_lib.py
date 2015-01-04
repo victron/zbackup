@@ -4,47 +4,59 @@
 
 import subprocess
 import logging
+from time import strftime, sleep
 
 logger = logging.getLogger(__name__)
 
 
+# noinspection PyAttributeOutsideInit
 class Volume:
-    def __init__(self, src_sys, dst_sys, volume):
-        self.volume = volume
-
-        self.src_sys =src_sys
+    def __init__(self, src_sys, dst_sys, debug):
+        self.src_sys = src_sys
         self.dst_sys = dst_sys
-        self.volume_dst_dict = get_specific_snap_list(dst_sys, volume)
-        self.volume_src_dict = get_specific_snap_list(src_sys, volume)
+        self.debug = debug
+        self.current_date = strftime('%Y-%m-%d_%H:%M:%S')
+
+
+
+    def generateDicts(self, volume):
+        # TODO : how it correct according __init__?
+        self.volume = volume
+        self.volume_dst_dict = get_specific_snap_list(self.dst_sys, volume)
+        self.volume_src_dict = get_specific_snap_list(self.src_sys, volume)
         self.previous_same_snap = same_and_max_val_in_dicts(self.volume_src_dict, self.volume_dst_dict)
         self.newest_src_snap = max_dict_val(self.volume_src_dict)
+        self.linux_workarount = False
 
-#    @property
-    def  gatherAttrs(self):
+    # @property
+    def gatherAttrs(self):
         attrs = []
         for key in self.__dict__:
-            attrs.append('<{0}> = {1}'.format(key,getattr(self,key)))
+            attrs.append('<{0}> = {1}'.format(key, getattr(self, key)))
         return ', '.join(attrs)
+
     def __str__(self):
         return '[{0}: {1}]'.format(self.__class__.__name__, self.gatherAttrs())
 
 
-class ToOS (Volume):
-    def __init__(self, src_sys, dst_sys, volume, debug=False):
-        Volume.__init__(self, src_sys, dst_sys, volume)
-        self.debug = debug
-        self.dst_volume = dst_sys+volume
-
+class ToOS(Volume):
     def snap(self):
-        send_snap(self.previous_same_snap[0], self.newest_src_snap[0], self.dst_volume, self.debug)
+        if self.previous_same_snap == self.newest_src_snap:
+            logger.debug('nothing send on OS {0} == {1}'.format(self.previous_same_snap, self.newest_src_snap))
+        else:
+            linux_workaround_mount(self.linux_workarount)
+            send_snap(self.previous_same_snap[0], self.newest_src_snap[0], self.dst_sys + self.volume, self.debug)
+            linux_workaround_umount(self.linux_workarount)
 
-class ToUSB (ToOS):
-    def snap(self, current_date):
-        create_new_snap(self.src_sys, [self.volume],current_date,self.debug)
-        new_volume_data = ToOS(self.src_sys,self.dst_sys, self.volume,self.debug)
-        ToOS.snap(new_volume_data)
-#        send_snap(new_volume_data.previous_same_snap[0], new_volume_data.newest_src_snap[0], new_volume_data.dst_volume, new_volume_data.debug)
 
+class ToUSB(Volume):
+    def snap(self):
+        create_new_snap(self.src_sys, [self.volume], self.current_date, self.debug)
+        new_volume_data = ToUSB(self.src_sys, self.dst_sys, self.debug)
+        new_volume_data.generateDicts(self.volume)
+        # ToOS.snap(new_volume_data)
+        send_snap(new_volume_data.previous_same_snap[0], new_volume_data.newest_src_snap[0],
+                  new_volume_data.dst_sys + new_volume_data.volume, new_volume_data.debug)
 
 
 def exit_on_error(exit_code):
@@ -66,6 +78,7 @@ def umount_disk(dev_disk, truecrypt=True):
 def check_mounted():
     # check usb mounted or not
     all_zpools = subprocess.getoutput(["zpool list -H -o name"])
+    # TODO: need to rebuild, in case not exported before shutdown
     all_zpools = all_zpools.split('\n')
     logger.debug('<all_Zpools> in system  %s', all_zpools)
     if 'backup' in all_zpools:
@@ -192,9 +205,15 @@ def continue_or_exit(question, debug=False):
     else:
         pass
 
-def send_snap(src_snap1, src_snap2, dst_volume,debug_flag=False):
+
+def send_snap(src_snap1, src_snap2, dst_volume, debug_flag=False):
     # in case src_snap1 == None send full snapshot
     if src_snap1 is None:
+        p = subprocess.Popen(['zfs', 'send', '-v', '-n', src_snap1], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        output = p.communicate()[1]  # get only  stderror in [1]
+        logger.info('ZFS test==> {0}'.format(output.decode()))
+        exit_code = p.returncode
+        exit_on_error(exit_code)
         continue_or_exit('send snap {0} to volume {1} ?'.format(src_snap2, dst_volume), debug_flag)
         p1 = subprocess.Popen(['zfs', 'send', '-v', src_snap2], stdout=subprocess.PIPE)
         p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', '-n', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
@@ -202,38 +221,18 @@ def send_snap(src_snap1, src_snap2, dst_volume,debug_flag=False):
         exit_code = p2.returncode
         exit_on_error(exit_code)
     else:
+        p = subprocess.Popen(['zfs', 'send', '-v', '-n', '-i', src_snap1, src_snap2], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        output = p.communicate()[1]  # get only  stderror in [1]
+        logger.info('ZFS test==> {0}'.format(output.decode('utf-8')))
+        exit_code = p.returncode
+        exit_on_error(exit_code)
         continue_or_exit('send INCREMENTAL snaps {0} and {1} to volume {2} ?'.format(src_snap1, src_snap2, dst_volume),
-                     debug_flag)
+                         debug_flag)
         p1 = subprocess.Popen(['zfs', 'send', '-v', '-i', src_snap1, src_snap2], stdout=subprocess.PIPE)
         p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', '-n', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
         output = p2.communicate()[0]  # need for below string, in oposite it return None
         exit_code = p2.returncode
         exit_on_error(exit_code)
-
-
-def send_snap_full(src_snap, dst_volume, debug_flag=False):
-    logger.info('start sending   FULL snap {0}'.format(src_snap))
-    logger.info('start receiving FULL snap on volume {0}'.format(dst_volume))
-    send_snap_test_full(src_snap, dst_volume)
-    continue_or_exit('send snap {0} to volume {1} ?'.format(src_snap, dst_volume), debug_flag)
-    p1 = subprocess.Popen(['zfs', 'send', '-v', src_snap], stdout=subprocess.PIPE)
-    p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
-    output = p2.communicate()[0]
-    exit_code = p2.returncode
-    exit_on_error(exit_code)
-
-
-def send_snap_incremental(src_snap1, src_snap2, dst_volume, debug_flag=False):
-    logger.info('start sending INCREMENTAL snaps {0} and {1}'.format(src_snap1, src_snap2))
-    logger.info('start receiving INCREMENTAL snap on volume {0}'.format(dst_volume))
-    send_snap_test_incremental(src_snap1, src_snap2, dst_volume)
-    continue_or_exit('send INCREMENTAL snaps {0} and {1} to volume {2} ?'.format(src_snap1, src_snap2, dst_volume),
-                     debug_flag)
-    p1 = subprocess.Popen(['zfs', 'send', '-v', '-i', src_snap1, src_snap2], stdout=subprocess.PIPE)
-    p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
-    output = p2.communicate()[0]  # need for below string, in oposite it return None
-    exit_code = p2.returncode
-    exit_on_error(exit_code)
 
 
 def send_snap_test_incremental(src_snap1, src_snap2, dst_volume):
@@ -252,27 +251,12 @@ def send_snap_test_incremental(src_snap1, src_snap2, dst_volume):
     logger.info('----- ZFS TEST receive incremental = OK ----')
 
 
-def send_snap_test_full(src_snap1, dst_volume):
-    p = subprocess.Popen(['zfs', 'send', '-v', '-n', src_snap1], stdout=subprocess.PIPE)
-    output = p.communicate()[0]  # get only stdoutput, stderror in [1]
-    logger.info('ZFS test {0}'.format(output.decode()))
-    exit_code = p.returncode
-    exit_on_error(exit_code)
-    logger.info('----- ZFS TEST send full = OK ----')
-    p1 = subprocess.Popen(['zfs', 'send', '-v', '-i', src_snap1], stdout=subprocess.PIPE)
-    p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', '-n', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
-    output = p2.communicate()[0]
-    logger.info('ZFS test {0}'.format(output.decode()))
-    exit_code = p2.returncode
-    exit_on_error(exit_code)
-    logger.info('----- ZFS TEST receive full = OK ----')
-
-
 def linux_workaround_umount(execute=False):
     if execute:
         exit_code = subprocess.call(['service', 'lightdm', 'stop'])
         logger.debug('stop lightd exit code = {0}'.format(exit_code))
         exit_on_error(exit_code)
+        sleep(3)
         exit_code = subprocess.call(['umount', '-l', '/tmp'])
         logger.debug('umount /tmp exit code = {0}'.format(exit_code))
         exit_on_error(exit_code)
@@ -285,6 +269,7 @@ def linux_workaround_mount(execute=False):
         exit_code = subprocess.call(['zfs', 'mount', '-O', 'rpool/tmp'])
         logger.debug('zfs mount -O  rpool/tmp exit code = {0}'.format(exit_code))
         exit_on_error(exit_code)
+        sleep(3)
         exit_code = subprocess.call(['service', 'lightdm', 'start'])
         logger.debug('start lightd exit code = {0}'.format(exit_code))
         exit_on_error(exit_code)

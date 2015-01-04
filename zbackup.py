@@ -9,7 +9,6 @@
 
 import argparse
 import configparser
-import time
 
 from zbackup_lib import *
 
@@ -122,52 +121,29 @@ if exit_code != 0:
     print("device " + dev_disk + " not found. Connect disk...")
     exit(exit_code)
 
+mount_disk(OS_type, dev_disk, truecrypt)
+
 # ############## set direction according command line options ###########
 if arg.direction == 'usb':
-    dst_SYS = disk_pool
-    src_SYS = root_pool
-    create_snap_flag = True
+    send_volume = ToUSB(root_pool, disk_pool, debug_flag)
 elif arg.direction == 'os':
-    dst_SYS = root_pool
-    src_SYS = disk_pool
-    create_snap_flag = False
+    send_volume = ToOS(disk_pool, root_pool, debug_flag)
 else:
     logger.error('wrong direction exit ... ')
     exit(201)
 
-# noinspection PyUnboundLocalVariable
-logger.debug('<dst_SYS> ' + dst_SYS)
-# noinspection PyUnboundLocalVariable
-logger.debug('<src_SYS> ' + src_SYS)
-
-
-# ================================================
-
-# current_date = subprocess.getoutput(['date +"%Y-%m-%d"'])
-current_date = time.strftime('%Y-%m-%d_%H:%M:%S')
-logger.debug('system date ' + current_date)
-
 # #################### main block #######################
-
-mount_disk(OS_type, dev_disk, truecrypt)
-
 # noinspection PyUnboundLocalVariable
 for volume in config.get(host_config, 'volume').split():
     # noinspection PyUnboundLocalVariable
-    if create_snap_flag:
-        send_volume = ToUSB(src_SYS, dst_SYS, volume, debug_flag)
-        logger.debug(send_volume)
-        send_volume.snap(current_date)
-    else:
-        send_volume = ToOS(src_SYS,dst_SYS,volume,debug_flag)
-        logger.debug(send_volume)
-        if send_volume.previous_same_snap == send_volume.newest_src_snap: #previous_same_snap == newest_src_snap:
-            logger.debug('nothing send on OS {0} == {1}'.format(send_volume.previous_same_snap, send_volume.newest_src_snap))
-        else:
-            #linux_workaround_umount(linux_workaround_yes)
-            #send_snap(previous_same_snap[0], newest_src_snap[0], dst_SYS + volume, debug_flag)
-            #linux_workaround_mount(linux_workaround_yes)
-            send_volume.snap()
+    logger.debug('INIT==> {0}'.format(send_volume))
+    send_volume.generateDicts(volume)
+    if volume == '/tmp' and OS_type == 'Linux':
+        send_volume.linux_workarount = True
+#    else:
+#        send_volume.linux_workarount = False
+    logger.debug('UPDATE==> {0}'.format(send_volume))
+    send_volume.snap()
 
 umount_disk(dev_disk, truecrypt)
 logger.info("----------- END ------------")

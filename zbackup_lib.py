@@ -17,9 +17,7 @@ class Volume:
         self.debug = debug
         self.current_date = strftime('%Y-%m-%d_%H:%M:%S')
 
-
-
-    def generateDicts(self, volume):
+    def generate_dicts(self, volume):
         # TODO : how it correct according __init__?
         self.volume = volume
         self.volume_dst_dict = get_specific_snap_list(self.dst_sys, volume)
@@ -29,14 +27,15 @@ class Volume:
         self.linux_workarount = False
 
     # @property
-    def gatherAttrs(self):
+    def gather_attrs(self):
         attrs = []
         for key in self.__dict__:
             attrs.append('<{0}> = {1}'.format(key, getattr(self, key)))
         return ', '.join(attrs)
 
     def __str__(self):
-        return '[{0}: {1}]'.format(self.__class__.__name__, self.gatherAttrs())
+        return '[{0}: {1}]'.format(self.__class__.__name__, self.gather_attrs())
+
 
 
 class ToOS(Volume):
@@ -51,13 +50,70 @@ class ToOS(Volume):
 
 class ToUSB(Volume):
     def snap(self):
-        create_new_snap(self.src_sys, [self.volume], self.current_date, self.debug)
+        create_new_snap(self.src_sys, self.volume, self.current_date, self.debug)
         new_volume_data = ToUSB(self.src_sys, self.dst_sys, self.debug)
-        new_volume_data.generateDicts(self.volume)
+        new_volume_data.generate_dicts(self.volume)
         # ToOS.snap(new_volume_data)
         send_snap(new_volume_data.previous_same_snap[0], new_volume_data.newest_src_snap[0],
                   new_volume_data.dst_sys + new_volume_data.volume, new_volume_data.debug)
 
+class Pool:
+    def __init__(self, pool, partuuid=None):
+        self.pool = pool
+        self.OS_type = subprocess.getoutput('uname')
+        logger.info('OS => '.format(self.OS_type))
+        if partuuid is not None:
+            if self.OS_type == 'Linux':
+                self.partuuid = '/dev/disk/by-partuuid/' + partuuid
+            elif OS_type == 'FreeBSD':
+                self.partuuid = '/dev/gptid/' + partuuid
+            else:
+                logger.error('UNknow OS =>'.format(self.OS_type))
+                exit(202)
+
+
+    def check_imported(self):
+        all_zpools = subprocess.getoutput(["zpool list -H -o name"])
+        all_zpools = all_zpools.split('\n')
+        logger.debug('<all_Zpools>= {0}'.format(all_zpools))
+        if self.pool in all_zpools:
+            logger.info('Zpool backup already  imported into system')
+            return True
+        else:
+            return False
+
+    def check_partuuid(self):
+        exit_code = subprocess.call(['ls', self.partuuid])
+        if exit_code == 0:
+            return True
+        else:
+            return False
+
+    def mount(self,attempt, truecrypt=False):
+        i = 0
+        while i < attempt:
+            if self.check_imported():
+                logger.info('ZPOOL {0} already  imported into system'.format(self.pool))
+                return True
+            elif self.check_partuuid():
+                # TODO : truecrypt, currently not supported under FreeBsd 10.1
+                logger.info('importing pool.... backup ')
+                exit_code = subprocess.call(['zpool', 'import', self.pool])
+                exit_on_error(exit_code)
+            elif not self.check_partuuid():
+                i += 1
+                logger.error('not found {0}'.format(self.partuuid))
+                continue_or_exit('device {0} not found.\n'
+                                 'Connect USB disk...\n'
+                                 'atempt {1} continue or exit...'.format(self.partuuid, attempt - i), True)
+        else:
+            logger.critical('device {0} not found. Connect disk... Exit...'.format(self.partuuid))
+            exit(10)
+
+    def umount(self):
+        logger.info('exporting pool.... backup ')
+        exit_code = subprocess.call(['zpool', 'export', 'backup'])
+        True if exit_code == 0 else exit_on_error(exit_code)
 
 def exit_on_error(exit_code):
     if exit_code != 0:
@@ -75,21 +131,38 @@ def umount_disk(dev_disk, truecrypt=True):
         exit_on_error(exit_code)
 
 
-def check_mounted():
+
+
+
+def check_mounted(dev_disk):
     # check usb mounted or not
-    all_zpools = subprocess.getoutput(["zpool list -H -o name"])
-    # TODO: need to rebuild, in case not exported before shutdown
-    all_zpools = all_zpools.split('\n')
-    logger.debug('<all_Zpools> in system  %s', all_zpools)
-    if 'backup' in all_zpools:
-        logger.info('Zpool backup already  imported into system')
-        return True
+    atempts_to_mount = 3
+    for atempt in range(atempts_to_mount):
+        all_zpools = subprocess.getoutput(["zpool list -H -o name"])
+        # TODO: need to rebuild, in case not exported before shutdown
+        all_zpools = all_zpools.split('\n')
+        logger.debug('<all_Zpools> in system  %s', all_zpools)
+        if 'backup' in all_zpools:
+            logger.info('Zpool backup already  imported into system')
+            return True
+        else:
+            exit_code = subprocess.call(['ls', dev_disk])
+            if exit_code == 0:
+                logger.info('USB found ... manual mounting')
+                return False
+            else:
+                logger.error("not found " + dev_disk)
+                continue_or_exit('device {0} not found.\n'
+                                 'Connect USB disk...\n'
+                                 'atempt {1} continue or exit...'.format(dev_disk, atempts_to_mount - atempt), True)
     else:
-        return False
+        print("device " + dev_disk + " not found. Connect disk...")
+        # noinspection PyUnboundLocalVariable
+        exit(exit_code)
 
 
 def mount_disk(os_type, dev_disk, truecrypt=True):
-    if not check_mounted():
+    if not check_mounted(dev_disk):
         if truecrypt:
             if os_type == 'FreeBSD':
                 logger.debug('start  fusefs')
@@ -108,20 +181,18 @@ def mount_disk(os_type, dev_disk, truecrypt=True):
         exit_code = subprocess.call(['zpool', 'import', 'backup'])
         exit_on_error(exit_code)
 
-    elif check_mounted():
+    elif check_mounted(dev_disk):
         logger.debug('Do not need to mount')
     else:
         exit_on_error(202)
 
 
-def create_new_snap(root_pool, pool_list, current_date, debug_flag=False):
+def create_new_snap(root_pool, volume, current_date, debug_flag=False):
     # create new snapshots
-    for i in pool_list:
-        logger.debug('create snap {0}'.format(root_pool + i + '@' + current_date))
-        continue_or_exit('create snap {0} ?'.format(root_pool + i + '@' + current_date), debug_flag)
-        exit_code = subprocess.call(['zfs', 'snapshot', root_pool + i + '@' + current_date])
-        exit_on_error(exit_code)
-        logger.info(root_pool + i + '@' + current_date + '....created  ' + str(exit_code))
+    continue_or_exit('create snap {0} ?'.format(root_pool + volume + '@' + current_date), debug_flag)
+    exit_code = subprocess.call(['zfs', 'snapshot', root_pool + volume + '@' + current_date])
+    exit_on_error(exit_code)
+    logger.info(root_pool + volume + '@' + current_date + '....created  ' + str(exit_code))
 
 
 def get_specific_snap_list(root_volume, volume):
@@ -137,7 +208,7 @@ def get_specific_snap_list(root_volume, volume):
     return all_snap_dict
 
 
-def max_dict_val(all_snap_dict, less_then=None):
+def max_dict_val(all_snap_dict: 'dictionary of snapshot', less_then=None) -> tuple:
     # find max value in dict
     max_val = None
     max_key = None
@@ -153,7 +224,7 @@ def max_dict_val(all_snap_dict, less_then=None):
     return max_key, max_val
 
 
-def same_and_max_val_in_dicts(dict1, dict2):
+def same_and_max_val_in_dicts(dict1, dict2) -> tuple:
     # find same and max val in both dicts
     # if one of args = None return None
     if dict1 is None or dict2 is None:
@@ -209,19 +280,21 @@ def continue_or_exit(question, debug=False):
 def send_snap(src_snap1, src_snap2, dst_volume, debug_flag=False):
     # in case src_snap1 == None send full snapshot
     if src_snap1 is None:
-        p = subprocess.Popen(['zfs', 'send', '-v', '-n', src_snap1], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        logger.debug('<src_snap2>'.format(src_snap2))
+        p = subprocess.Popen(['zfs', 'send', '-v', '-n', src_snap2], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         output = p.communicate()[1]  # get only  stderror in [1]
         logger.info('ZFS test==> {0}'.format(output.decode()))
         exit_code = p.returncode
         exit_on_error(exit_code)
         continue_or_exit('send snap {0} to volume {1} ?'.format(src_snap2, dst_volume), debug_flag)
         p1 = subprocess.Popen(['zfs', 'send', '-v', src_snap2], stdout=subprocess.PIPE)
-        p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', '-n', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
+        p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
         output = p2.communicate()[0]
         exit_code = p2.returncode
         exit_on_error(exit_code)
     else:
-        p = subprocess.Popen(['zfs', 'send', '-v', '-n', '-i', src_snap1, src_snap2], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        p = subprocess.Popen(['zfs', 'send', '-v', '-n', '-i', src_snap1, src_snap2], stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE)
         output = p.communicate()[1]  # get only  stderror in [1]
         logger.info('ZFS test==> {0}'.format(output.decode('utf-8')))
         exit_code = p.returncode
@@ -229,26 +302,10 @@ def send_snap(src_snap1, src_snap2, dst_volume, debug_flag=False):
         continue_or_exit('send INCREMENTAL snaps {0} and {1} to volume {2} ?'.format(src_snap1, src_snap2, dst_volume),
                          debug_flag)
         p1 = subprocess.Popen(['zfs', 'send', '-v', '-i', src_snap1, src_snap2], stdout=subprocess.PIPE)
-        p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', '-n', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
+        p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
         output = p2.communicate()[0]  # need for below string, in oposite it return None
         exit_code = p2.returncode
         exit_on_error(exit_code)
-
-
-def send_snap_test_incremental(src_snap1, src_snap2, dst_volume):
-    p = subprocess.Popen(['zfs', 'send', '-v', '-n', '-i', src_snap1, src_snap2], stdout=subprocess.PIPE)
-    output = p.communicate()[0]  # get only stdoutput, stderror in [1]
-    logger.info('ZFS test {0}'.format(output.decode('utf-8')))
-    exit_code = p.returncode
-    exit_on_error(exit_code)
-    logger.info('----- ZFS TEST send incremental = OK ----')
-    p1 = subprocess.Popen(['zfs', 'send', '-v', '-i', src_snap1, src_snap2], stdout=subprocess.PIPE)
-    p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', '-n', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
-    output = p2.communicate()[0]
-    logger.info('ZFS test {0}'.format(output.decode('utf-8')))
-    exit_code = p2.returncode
-    exit_on_error(exit_code)
-    logger.info('----- ZFS TEST receive incremental = OK ----')
 
 
 def linux_workaround_umount(execute=False):

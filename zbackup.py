@@ -106,21 +106,6 @@ else:
     logger.error('UNknow OS ' + OS_type)
     exit(202)
 
-# check USB connection  
-
-for atempt in range(atempts_to_mount):
-    exit_code = subprocess.call(['ls', dev_disk])
-    if exit_code == 0:
-        break
-    logger.error("not found " + dev_disk)
-    continue_or_exit('device {0} not found.\n'
-                     'Connect USB disk...\n'
-                     'atempt {1} continue or exit...'.format(dev_disk, atempts_to_mount - atempt), debug_flag)
-# noinspection PyUnboundLocalVariable
-if exit_code != 0:
-    print("device " + dev_disk + " not found. Connect disk...")
-    exit(exit_code)
-
 mount_disk(OS_type, dev_disk, truecrypt)
 
 # ############## set direction according command line options ###########
@@ -137,11 +122,11 @@ else:
 for volume in config.get(host_config, 'volume').split():
     # noinspection PyUnboundLocalVariable
     logger.debug('INIT==> {0}'.format(send_volume))
-    send_volume.generateDicts(volume)
+    send_volume.generate_dicts(volume)
     if volume == '/tmp' and OS_type == 'Linux':
         send_volume.linux_workarount = True
-#    else:
-#        send_volume.linux_workarount = False
+    # else:
+    #        send_volume.linux_workarount = False
     logger.debug('UPDATE==> {0}'.format(send_volume))
     send_volume.snap()
 

@@ -62,14 +62,14 @@ logger.info("----------- start working ------------")
 config = configparser.ConfigParser()
 config.read(config_file)
 
-dev_disk = config.get('USB device', 'partuuid', fallback=None)
-disk_pool = config.get('USB device', 'backup_pool', fallback='backup')
+partuuid = config.get('USB device', 'partuuid', fallback=None)
+pool = config.get('USB device', 'backup_pool', fallback='backup')
 truecrypt = config.getboolean('USB device', 'truecrypt', fallback=True)
 # config.BOOLEAN_STATES = {'yes': True, 'Yes': True, 'YES': True}
 
 logger.debug('------ read config file {0} --------'.format(config_file))
-logger.debug('dev_disk (partuuid) = {0}'.format(dev_disk))
-logger.debug('disk_pool = {0}'.format(disk_pool))
+logger.debug('dev_disk (partuuid) = {0}'.format(partuuid))
+logger.debug('disk_pool = {0}'.format(pool))
 
 # ## search zpool guid in config file and implement appropriate config section
 zpool_get_guid = subprocess.getoutput('zpool get guid').split()
@@ -94,25 +94,14 @@ else:
 # noinspection PyUnboundLocalVariable
 logger.debug('root_pool = {0}'.format(root_pool))
 
-# OS type
-OS_type = subprocess.getoutput(["uname"])
-if OS_type == 'Linux':
-    logger.info("OS is " + OS_type)
-    dev_disk = '/dev/disk/by-partuuid/' + dev_disk
-elif OS_type == 'FreeBSD':
-    logger.info("OS is " + OS_type)
-    dev_disk = '/dev/gptid/' + dev_disk
-else:
-    logger.error('UNknow OS ' + OS_type)
-    exit(202)
-
-mount_disk(OS_type, dev_disk, truecrypt)
+usb_disk = Pool(pool, partuuid)  # init USB disk
+usb_disk.mount(atempts_to_mount)
 
 # ############## set direction according command line options ###########
 if arg.direction == 'usb':
-    send_volume = ToUSB(root_pool, disk_pool, debug_flag)
+    send_volume = ToUSB(root_pool, usb_disk.pool, debug_flag)
 elif arg.direction == 'os':
-    send_volume = ToOS(disk_pool, root_pool, debug_flag)
+    send_volume = ToOS(usb_disk.pool, root_pool, debug_flag)
 else:
     logger.error('wrong direction exit ... ')
     exit(201)
@@ -123,12 +112,12 @@ for volume in config.get(host_config, 'volume').split():
     # noinspection PyUnboundLocalVariable
     logger.debug('INIT==> {0}'.format(send_volume))
     send_volume.generate_dicts(volume)
-    if volume == '/tmp' and OS_type == 'Linux':
+    if volume == '/tmp' and usb_disk.OS_type == 'Linux':
         send_volume.linux_workarount = True
     # else:
-    #        send_volume.linux_workarount = False
+    # send_volume.linux_workarount = False
     logger.debug('UPDATE==> {0}'.format(send_volume))
     send_volume.snap()
 
-umount_disk(dev_disk, truecrypt)
+usb_disk.umount()
 logger.info("----------- END ------------")

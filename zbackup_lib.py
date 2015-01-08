@@ -18,7 +18,6 @@ class Volume:
         self.current_date = strftime('%Y-%m-%d_%H:%M:%S')
 
     def generate_dicts(self, volume):
-        # TODO : how it correct according __init__?
         self.volume = volume
         self.volume_dst_dict = get_specific_snap_list(self.dst_sys, volume)
         self.volume_src_dict = get_specific_snap_list(self.src_sys, volume)
@@ -37,13 +36,16 @@ class Volume:
         return '[{0}: {1}]'.format(self.__class__.__name__, self.gather_attrs())
 
 
-
 class ToOS(Volume):
     def snap(self):
         if self.previous_same_snap == self.newest_src_snap:
             logger.debug('nothing send on OS {0} == {1}'.format(self.previous_same_snap, self.newest_src_snap))
         else:
             linux_workaround_mount(self.linux_workarount)
+            if (self.previous_same_snap[0] is None) and (self.volume_dst_dict != {}):
+                logger.info('need to delete snapshots {0}'.format(self.volume_dst_dict))
+                continue_or_exit('confirm (or do it manually after', True)
+                list(map(destroy_snaps, self.volume_dst_dict.keys()))
             send_snap(self.previous_same_snap[0], self.newest_src_snap[0], self.dst_sys + self.volume, self.debug)
             linux_workaround_umount(self.linux_workarount)
 
@@ -54,8 +56,13 @@ class ToUSB(Volume):
         new_volume_data = ToUSB(self.src_sys, self.dst_sys, self.debug)
         new_volume_data.generate_dicts(self.volume)
         # ToOS.snap(new_volume_data)
+        if (new_volume_data.previous_same_snap[0] is None) and (bool(new_volume_data.volume_dst_dict)):
+            logger.warning('need to delete snapshots {0}'.format(new_volume_data.volume_dst_dict))
+            continue_or_exit('confirm (or do it manually after', True)
+            list(map(destroy_snaps, new_volume_data.volume_dst_dict.keys()))
         send_snap(new_volume_data.previous_same_snap[0], new_volume_data.newest_src_snap[0],
                   new_volume_data.dst_sys + new_volume_data.volume, new_volume_data.debug)
+
 
 class Pool:
     def __init__(self, pool, partuuid=None):
@@ -65,12 +72,11 @@ class Pool:
         if partuuid is not None:
             if self.OS_type == 'Linux':
                 self.partuuid = '/dev/disk/by-partuuid/' + partuuid
-            elif OS_type == 'FreeBSD':
+            elif self.OS_type == 'FreeBSD':
                 self.partuuid = '/dev/gptid/' + partuuid
             else:
                 logger.error('UNknow OS =>'.format(self.OS_type))
                 exit(202)
-
 
     def check_imported(self):
         all_zpools = subprocess.getoutput(["zpool list -H -o name"])
@@ -89,14 +95,13 @@ class Pool:
         else:
             return False
 
-    def mount(self,attempt, truecrypt=False):
+    def mount(self, attempt, truecrypt=False):
         i = 0
         while i < attempt:
             if self.check_imported():
                 logger.info('ZPOOL {0} already  imported into system'.format(self.pool))
                 return True
             elif self.check_partuuid():
-                # TODO : truecrypt, currently not supported under FreeBsd 10.1
                 logger.info('importing pool.... backup ')
                 exit_code = subprocess.call(['zpool', 'import', self.pool])
                 exit_on_error(exit_code)
@@ -109,82 +114,32 @@ class Pool:
         else:
             logger.critical('device {0} not found. Connect disk... Exit...'.format(self.partuuid))
             exit(10)
-
-    def umount(self):
-        logger.info('exporting pool.... backup ')
-        exit_code = subprocess.call(['zpool', 'export', 'backup'])
-        True if exit_code == 0 else exit_on_error(exit_code)
-
-def exit_on_error(exit_code):
-    if exit_code != 0:
-        logger.critical('exit... system return code...' + str(exit_code))
-        exit(exit_code)
-
-
-def umount_disk(dev_disk, truecrypt=True):
-    logger.info('exporting pool.... backup ')
-    exit_code = subprocess.call(['zpool', 'export', 'backup'])
-    exit_on_error(exit_code)
-    if truecrypt:
-        logger.info('Umounting as truecrypt disk ' + dev_disk)
-        exit_code = subprocess.call(['truecrypt', '-d', dev_disk])
-        exit_on_error(exit_code)
-
-
-
-
-
-def check_mounted(dev_disk):
-    # check usb mounted or not
-    atempts_to_mount = 3
-    for atempt in range(atempts_to_mount):
-        all_zpools = subprocess.getoutput(["zpool list -H -o name"])
-        # TODO: need to rebuild, in case not exported before shutdown
-        all_zpools = all_zpools.split('\n')
-        logger.debug('<all_Zpools> in system  %s', all_zpools)
-        if 'backup' in all_zpools:
-            logger.info('Zpool backup already  imported into system')
-            return True
-        else:
-            exit_code = subprocess.call(['ls', dev_disk])
-            if exit_code == 0:
-                logger.info('USB found ... manual mounting')
-                return False
-            else:
-                logger.error("not found " + dev_disk)
-                continue_or_exit('device {0} not found.\n'
-                                 'Connect USB disk...\n'
-                                 'atempt {1} continue or exit...'.format(dev_disk, atempts_to_mount - atempt), True)
-    else:
-        print("device " + dev_disk + " not found. Connect disk...")
-        # noinspection PyUnboundLocalVariable
-        exit(exit_code)
-
-
-def mount_disk(os_type, dev_disk, truecrypt=True):
-    if not check_mounted(dev_disk):
+        # TODO : truecrypt, currently not supported under FreeBsd 10.1
         if truecrypt:
-            if os_type == 'FreeBSD':
-                logger.debug('start  fusefs')
-                exit_code = subprocess.call(['/usr/local/etc/rc.d/fusefs', 'onestart'])
-                exit_on_error(exit_code)
-
-            logger.info('mounting as truecrypt disk ' + dev_disk)
             try:
-                exit_code = subprocess.call(['truecrypt', '--filesystem=none', '--slot=1', dev_disk])
+                exit_code = subprocess.call(['truecrypt', '--filesystem=none', '--slot=1', self.partuuid])
                 exit_on_error(exit_code)
             except:
                 logger.critical('unknow exeption... ... exit')
                 exit(25)
 
-        logger.info('importing pool.... backup ')
-        exit_code = subprocess.call(['zpool', 'import', 'backup'])
-        exit_on_error(exit_code)
+    def umount(self, truecrypt=False):
+        logger.info('exporting pool.... {0}'.format(self.pool))
+        exit_code = subprocess.call(['zpool', 'export', self.pool])
+        return True if exit_code == 0 else exit_on_error(exit_code)
+        # TODO: not in use untill correction on FreeBSD 10
 
-    elif check_mounted(dev_disk):
-        logger.debug('Do not need to mount')
-    else:
-        exit_on_error(202)
+
+# if truecrypt:
+#           logger.info('Umounting as truecrypt disk ' + self.partuuid)
+#           exit_code = subprocess.call(['truecrypt', '-d', self.partuuid])
+#           exit_on_error(exit_code)
+
+
+def exit_on_error(exit_code):
+    if exit_code != 0:
+        logger.critical('exit... system return code...' + str(exit_code))
+        exit(exit_code)
 
 
 def create_new_snap(root_pool, volume, current_date, debug_flag=False):
@@ -280,7 +235,7 @@ def continue_or_exit(question, debug=False):
 def send_snap(src_snap1, src_snap2, dst_volume, debug_flag=False):
     # in case src_snap1 == None send full snapshot
     if src_snap1 is None:
-        logger.debug('<src_snap2>'.format(src_snap2))
+        logger.debug('<src_snap2> = {0}'.format(src_snap2))
         p = subprocess.Popen(['zfs', 'send', '-v', '-n', src_snap2], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         output = p.communicate()[1]  # get only  stderror in [1]
         logger.info('ZFS test==> {0}'.format(output.decode()))
@@ -333,3 +288,9 @@ def linux_workaround_mount(execute=False):
     else:
         pass
 
+
+def destroy_snaps(snap):
+    logger.debug('snap to destroy {0}'.format(snap))
+    exit_code = subprocess.call(['zfs', 'destroy', snap])
+    exit_on_error(exit_code)
+    logger.debug('deleted snapshot {0} exit..{1}'.format(snap, exit_code))

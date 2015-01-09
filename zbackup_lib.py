@@ -103,7 +103,7 @@ class Pool:
                 return True
             elif self.check_partuuid():
                 logger.info('importing pool.... backup ')
-                exit_code = subprocess.call(['zpool', 'import', self.pool])
+                exit_code = subprocess.call(['zpool', 'import', '-N', '-f' self.pool])
                 exit_on_error(exit_code)
             elif not self.check_partuuid():
                 i += 1
@@ -127,7 +127,7 @@ class Pool:
         logger.info('exporting pool.... {0}'.format(self.pool))
         exit_code = subprocess.call(['zpool', 'export', self.pool])
         return True if exit_code == 0 else exit_on_error(exit_code)
-        # TODO: not in use untill correction on FreeBSD 10
+        # TODO: truecrypt, not in use untill correction on FreeBSD 10
 
 
 # if truecrypt:
@@ -242,7 +242,7 @@ def send_snap(src_snap1, src_snap2, dst_volume, debug_flag=False):
         exit_code = p.returncode
         exit_on_error(exit_code)
         continue_or_exit('send snap {0} to volume {1} ?'.format(src_snap2, dst_volume), debug_flag)
-        p1 = subprocess.Popen(['zfs', 'send', '-v', src_snap2], stdout=subprocess.PIPE)
+        p1 = subprocess.Popen(['zfs', 'send', '-v', '-p', src_snap2], stdout=subprocess.PIPE)
         p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
         output = p2.communicate()[0]
         exit_code = p2.returncode
@@ -256,7 +256,7 @@ def send_snap(src_snap1, src_snap2, dst_volume, debug_flag=False):
         exit_on_error(exit_code)
         continue_or_exit('send INCREMENTAL snaps {0} and {1} to volume {2} ?'.format(src_snap1, src_snap2, dst_volume),
                          debug_flag)
-        p1 = subprocess.Popen(['zfs', 'send', '-v', '-i', src_snap1, src_snap2], stdout=subprocess.PIPE)
+        p1 = subprocess.Popen(['zfs', 'send', '-v', '-p', '-i', src_snap1, src_snap2], stdout=subprocess.PIPE)
         p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
         output = p2.communicate()[0]  # need for below string, in oposite it return None
         exit_code = p2.returncode

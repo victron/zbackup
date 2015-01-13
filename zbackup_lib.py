@@ -16,14 +16,11 @@ class Volume:
         self.dst_sys = dst_sys
         self.debug = debug
         self.current_date = strftime('%Y-%m-%d_%H:%M:%S')
+        self.save_n_old_snapshots_src = 0
+        self.save_old_n_snapshots_dst = 0
 
-    def generate_dicts(self, volume):
-        self.volume = volume
-        self.volume_dst_dict = get_specific_snap_list(self.dst_sys, volume)
-        self.volume_src_dict = get_specific_snap_list(self.src_sys, volume)
-        self.previous_same_snap = same_and_max_val_in_dicts(self.volume_src_dict, self.volume_dst_dict)
-        self.newest_src_snap = max_dict_val(self.volume_src_dict)
-        self.linux_workarount = False
+    def __str__(self):
+        return '[{0}: {1}]'.format(self.__class__.__name__, self.gather_attrs())
 
     # @property
     def gather_attrs(self):
@@ -32,26 +29,45 @@ class Volume:
             attrs.append('<{0}> = {1}'.format(key, getattr(self, key)))
         return ', '.join(attrs)
 
-    def __str__(self):
-        return '[{0}: {1}]'.format(self.__class__.__name__, self.gather_attrs())
+    def generate_dicts(self, volume):
+        self.volume = volume
+        self.volume_dst_dict = get_specific_snap_list(self.dst_sys, volume)
+        self.volume_src_dict = get_specific_snap_list(self.src_sys, volume)
+        self.previous_same_snap = same_and_max_val_in_dicts(self.volume_src_dict, self.volume_dst_dict)
+        self.newest_src_snap = max_dict_val(self.volume_src_dict)
+        self.linux_workarount = False
+        self.snaps_to_leave_src, self.snaps_to_remove_src = create_last_n_snaps(self.volume_src_dict,
+                                                                                self.save_n_old_snapshots_src)
+        self.snaps_to_leave_dst, self.snaps_to_remove_dst = create_last_n_snaps(self.volume_dst_dict,
+                                                                                self.save_old_n_snapshots_dst)
+
+    def delete_old_snapshots(self):
+        if bool(self.snaps_to_remove_src):
+            logger.info('going to delete OLD snapshots SRC => {0}'.format(self.snaps_to_remove_src.keys()))
+            continue_or_exit('confirm (or do it manually after', True)
+            list(map(destroy_snaps, self.snaps_to_remove_src.keys()))
+        if bool(self.snaps_to_remove_dst):
+            logger.info('going to delete OLD snapshots DST => {0}'.format(self.snaps_to_remove_dst.keys()))
+            continue_or_exit('confirm (or do it manually after', True)
+            list(map(destroy_snaps, self.snaps_to_remove_dst.keys()))
 
 
 class ToOS(Volume):
-    def snap(self):
+    def send_snap(self):
         if self.previous_same_snap == self.newest_src_snap:
             logger.debug('nothing send on OS {0} == {1}'.format(self.previous_same_snap, self.newest_src_snap))
         else:
-            linux_workaround_mount(self.linux_workarount)
-            if (self.previous_same_snap[0] is None) and (self.volume_dst_dict != {}):
+            linux_workaround_umount(self.linux_workarount)
+            if (self.previous_same_snap[0] is None) and (not self.volume_dst_dict):
                 logger.info('need to delete snapshots {0}'.format(self.volume_dst_dict))
                 continue_or_exit('confirm (or do it manually after', True)
                 list(map(destroy_snaps, self.volume_dst_dict.keys()))
             send_snap(self.previous_same_snap[0], self.newest_src_snap[0], self.dst_sys + self.volume, self.debug)
-            linux_workaround_umount(self.linux_workarount)
+            linux_workaround_mount(self.linux_workarount)
 
 
 class ToUSB(Volume):
-    def snap(self):
+    def send_snap(self):
         create_new_snap(self.src_sys, self.volume, self.current_date, self.debug)
         new_volume_data = ToUSB(self.src_sys, self.dst_sys, self.debug)
         new_volume_data.generate_dicts(self.volume)
@@ -68,7 +84,7 @@ class Pool:
     def __init__(self, pool, partuuid=None):
         self.pool = pool
         self.OS_type = subprocess.getoutput('uname')
-        logger.info('OS => '.format(self.OS_type))
+        logger.info('OS => {0}'.format(self.OS_type))
         if partuuid is not None:
             if self.OS_type == 'Linux':
                 self.partuuid = '/dev/disk/by-partuuid/' + partuuid
@@ -103,7 +119,7 @@ class Pool:
                 return True
             elif self.check_partuuid():
                 logger.info('importing pool.... backup ')
-                exit_code = subprocess.call(['zpool', 'import', '-N', '-f' self.pool])
+                exit_code = subprocess.call(['zpool', 'import', '-N', '-f', self.pool])
                 exit_on_error(exit_code)
             elif not self.check_partuuid():
                 i += 1
@@ -131,7 +147,7 @@ class Pool:
 
 
 # if truecrypt:
-#           logger.info('Umounting as truecrypt disk ' + self.partuuid)
+# logger.info('Umounting as truecrypt disk ' + self.partuuid)
 #           exit_code = subprocess.call(['truecrypt', '-d', self.partuuid])
 #           exit_on_error(exit_code)
 
@@ -196,6 +212,18 @@ def same_and_max_val_in_dicts(dict1, dict2) -> tuple:
             i_dict1 += 1
         elif sorted_dict1[i_dict1][0] < sorted_dict2[i_dict2][0]:
             i_dict2 += 1
+    else:
+        return None, None
+
+
+def create_last_n_snaps(input_dict, number):
+    # create list of N snaps to leave on disk and list of snaps to remove
+    if (input_dict is not None) and (len(input_dict) > number):
+        sorted_dict = sorted([(value, key) for key, value in input_dict.items()], reverse=True)
+        snaps_to_leave = {key: value for (value, key) in sorted_dict[:len(input_dict) - number]}
+        snaps_to_remove = {key: value for (value, key) in sorted_dict[number:]}
+        logger.debug('<snaps_to_leave> = {0}\n <snaps_to_remove> = {1}'.format(snaps_to_leave, snaps_to_remove))
+        return snaps_to_leave, snaps_to_remove
     else:
         return None, None
 

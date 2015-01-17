@@ -3,6 +3,7 @@ __author__ = 'vic'
 import unittest
 from zbackup_lib2 import same_and_max_val_in_dicts
 
+
 class KnownValues(unittest.TestCase):
     dict1 = {'zroot-n/test@2014-07-03': '1404374299',
              'zroot-n/test@2014-09-11': '1410436754',
@@ -55,16 +56,14 @@ class KnownValues(unittest.TestCase):
     known_values = ((None, None, None),
                     (None, dict2, None),
                     (dict2, None, None),
-                    (dict1, dict2, ('zroot-n/test@2014-09-30', '1412108822' )),
+                    (dict1, dict2, ('zroot-n/test@2014-09-30', '1412108822')),
                     (dict1, dict3, ('zroot-n/test@2014-09-18', '1411061504')),
-                    (dict1, dict4, None)
-                    )
+                    (dict1, dict4, None))
 
     def test__same_and_max_val_in_dicts(self):
         for val1, val2, table_result in self.known_values:
             result = same_and_max_val_in_dicts(val1, val2)
             self.assertEqual(result, table_result)
-
 
 
 if __name__ == '__main__':

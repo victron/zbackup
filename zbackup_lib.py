@@ -4,7 +4,7 @@
 
 import subprocess
 import logging
-from time import strftime, sleep
+from time import strftime, sleep, localtime
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ class Volume:
         self.debug = debug
         self.current_date = strftime('%Y-%m-%d_%H:%M:%S')
         self.save_n_old_snapshots_src = 0
-        self.save_old_n_snapshots_dst = 0
+        self.save_n_old_snapshots_dst = 0
 
     def __str__(self):
         return '[{0}: {1}]'.format(self.__class__.__name__, self.gather_attrs())
@@ -36,24 +36,14 @@ class Volume:
         self.previous_same_snap = same_and_max_val_in_dicts(self.volume_src_dict, self.volume_dst_dict)
         self.newest_src_snap = max_dict_val(self.volume_src_dict)
         self.linux_workarount = False
-        self.snaps_to_leave_src, self.snaps_to_remove_src = create_last_n_snaps(self.volume_src_dict,
-                                                                                self.save_n_old_snapshots_src)
-        self.snaps_to_leave_dst, self.snaps_to_remove_dst = create_last_n_snaps(self.volume_dst_dict,
-                                                                                self.save_old_n_snapshots_dst)
-
-    def delete_old_snapshots(self):
-        if bool(self.snaps_to_remove_src):
-            logger.info('going to delete OLD snapshots SRC => {0}'.format(self.snaps_to_remove_src.keys()))
-            continue_or_exit('confirm (or do it manually after', True)
-            list(map(destroy_snaps, self.snaps_to_remove_src.keys()))
-        if bool(self.snaps_to_remove_dst):
-            logger.info('going to delete OLD snapshots DST => {0}'.format(self.snaps_to_remove_dst.keys()))
-            continue_or_exit('confirm (or do it manually after', True)
-            list(map(destroy_snaps, self.snaps_to_remove_dst.keys()))
+        self.snaps_to_leave_src, self.snaps_to_remove_src = create_last_n_snaps_list(self.volume_src_dict,
+                                                                                     self.save_n_old_snapshots_src)
+        self.snaps_to_leave_dst, self.snaps_to_remove_dst = create_last_n_snaps_list(self.volume_dst_dict,
+                                                                                     self.save_n_old_snapshots_dst)
 
 
 class ToOS(Volume):
-    def send_snap(self):
+    def send_snap(self, test_only: bool=False) -> tuple:
         if self.previous_same_snap == self.newest_src_snap:
             logger.debug('nothing send on OS {0} == {1}'.format(self.previous_same_snap, self.newest_src_snap))
         else:
@@ -62,12 +52,15 @@ class ToOS(Volume):
                 logger.info('need to delete snapshots {0}'.format(self.volume_dst_dict))
                 continue_or_exit('confirm (or do it manually after', True)
                 list(map(destroy_snaps, self.volume_dst_dict.keys()))
-            send_snap(self.previous_same_snap[0], self.newest_src_snap[0], self.dst_sys + self.volume, self.debug)
+            result = send_snap(self.previous_same_snap[0], self.newest_src_snap[0], self.dst_sys + self.volume,
+                               self.debug, test_only)
             linux_workaround_mount(self.linux_workarount)
+            return self.previous_same_snap[0], self.previous_same_snap[1], self.newest_src_snap[
+                0], self.dst_sys + self.volume, result[2]
 
 
 class ToUSB(Volume):
-    def send_snap(self):
+    def send_snap(self, test_only: bool=False) -> tuple:
         create_new_snap(self.src_sys, self.volume, self.current_date, self.debug)
         new_volume_data = ToUSB(self.src_sys, self.dst_sys, self.debug)
         new_volume_data.generate_dicts(self.volume)
@@ -76,12 +69,16 @@ class ToUSB(Volume):
             logger.warning('need to delete snapshots {0}'.format(new_volume_data.volume_dst_dict))
             continue_or_exit('confirm (or do it manually after', True)
             list(map(destroy_snaps, new_volume_data.volume_dst_dict.keys()))
-        send_snap(new_volume_data.previous_same_snap[0], new_volume_data.newest_src_snap[0],
-                  new_volume_data.dst_sys + new_volume_data.volume, new_volume_data.debug)
+        result = send_snap(new_volume_data.previous_same_snap[0], new_volume_data.newest_src_snap[0],
+                           new_volume_data.dst_sys + new_volume_data.volume, new_volume_data.debug, test_only)
+        return new_volume_data.previous_same_snap[0], \
+               strftime('%Y-%m-%d_%H:%M:%S', localtime(int(new_volume_data.previous_same_snap[1]))), \
+               new_volume_data.newest_src_snap[0], new_volume_data.dst_sys + new_volume_data.volume, result[2]
 
 
 class Pool:
     def __init__(self, pool, partuuid=None):
+        self.altroot = '/backup'
         self.pool = pool
         self.OS_type = subprocess.getoutput('uname')
         logger.info('OS => {0}'.format(self.OS_type))
@@ -95,11 +92,17 @@ class Pool:
                 exit(202)
 
     def check_imported(self):
-        all_zpools = subprocess.getoutput(["zpool list -H -o name"])
-        all_zpools = all_zpools.split('\n')
+        all_zpools = subprocess.getoutput(["zpool list -H -o name,health"])
+        all_zpools = all_zpools.split()
         logger.debug('<all_Zpools>= {0}'.format(all_zpools))
         if self.pool in all_zpools:
             logger.info('Zpool backup already  imported into system')
+            if all_zpools[all_zpools.index(self.pool) + 1] != 'ONLINE':
+                logger.error('pool {0} not ONLINE, trying to export with \'-f\' flag...'.format(self.pool))
+                # TODO: currently not implemented
+                exit(101)
+                exit_code = subprocess.call(['zpool', 'export', '-f', self.pool])
+                return False if exit_code == 0 else exit_on_error(exit_code)
             return True
         else:
             return False
@@ -119,7 +122,7 @@ class Pool:
                 return True
             elif self.check_partuuid():
                 logger.info('importing pool.... backup ')
-                exit_code = subprocess.call(['zpool', 'import', '-N', '-f', self.pool])
+                exit_code = subprocess.call(['zpool', 'import', '-f', '-o', 'altroot=' + self.altroot, self.pool])
                 exit_on_error(exit_code)
             elif not self.check_partuuid():
                 i += 1
@@ -148,12 +151,13 @@ class Pool:
 
 # if truecrypt:
 # logger.info('Umounting as truecrypt disk ' + self.partuuid)
-#           exit_code = subprocess.call(['truecrypt', '-d', self.partuuid])
-#           exit_on_error(exit_code)
+# exit_code = subprocess.call(['truecrypt', '-d', self.partuuid])
+# exit_on_error(exit_code)
 
 
-def exit_on_error(exit_code):
+def exit_on_error(exit_code, error_info='<no error info>'):
     if exit_code != 0:
+        logger.critical('ERROR => {0}'.format(error_info))
         logger.critical('exit... system return code...' + str(exit_code))
         exit(exit_code)
 
@@ -216,12 +220,14 @@ def same_and_max_val_in_dicts(dict1, dict2) -> tuple:
         return None, None
 
 
-def create_last_n_snaps(input_dict, number):
+def create_last_n_snaps_list(input_dict, number):
     # create list of N snaps to leave on disk and list of snaps to remove
-    if (input_dict is not None) and (len(input_dict) > number):
+    if (input_dict is not None) and (len(input_dict) > number > 0):
         sorted_dict = sorted([(value, key) for key, value in input_dict.items()], reverse=True)
-        snaps_to_leave = {key: value for (value, key) in sorted_dict[:len(input_dict) - number]}
-        snaps_to_remove = {key: value for (value, key) in sorted_dict[number:]}
+        snaps_to_leave = [(key, strftime('%Y-%m-%d_%H:%M:%S', localtime(int(value)))) for (value, key) in
+                          sorted_dict[:len(input_dict) - number]]
+        snaps_to_remove = [(key, strftime('%Y-%m-%d_%H:%M:%S', localtime(int(value)))) for (value, key) in
+                           sorted_dict[number:]]
         logger.debug('<snaps_to_leave> = {0}\n <snaps_to_remove> = {1}'.format(snaps_to_leave, snaps_to_remove))
         return snaps_to_leave, snaps_to_remove
     else:
@@ -260,35 +266,72 @@ def continue_or_exit(question, debug=False):
         pass
 
 
-def send_snap(src_snap1, src_snap2, dst_volume, debug_flag=False):
+def send_snap(src_snap1, src_snap2, dst_volume, debug_flag=False, test_only=False):
     # in case src_snap1 == None send full snapshot
     if src_snap1 is None:
         logger.debug('<src_snap2> = {0}'.format(src_snap2))
         p = subprocess.Popen(['zfs', 'send', '-v', '-n', src_snap2], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         output = p.communicate()[1]  # get only  stderror in [1]
-        logger.info('ZFS test==> {0}'.format(output.decode()))
+        output = output.decode('utf-8')
+        logger.info('ZFS test==> {0}'.format(output))
         exit_code = p.returncode
         exit_on_error(exit_code)
+        if test_only:
+            return tuple(map(lambda num: output.split()[num], [2, 4, 8]))
         continue_or_exit('send snap {0} to volume {1} ?'.format(src_snap2, dst_volume), debug_flag)
-        p1 = subprocess.Popen(['zfs', 'send', '-v', '-p', src_snap2], stdout=subprocess.PIPE)
+        p1 = subprocess.Popen(['zfs', 'send', '-v', '-p', src_snap2], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
-        output = p2.communicate()[0]
+        output = p2.communicate()[0].decode()
         exit_code = p2.returncode
+        stderr_send = p1.communicate()[1].decode()
         exit_on_error(exit_code)
+        return list(map(lambda num: stderr_send.split()[num], [2, 4, 8])) \
+               + list(map(lambda num: output.split()[num], [6, 8, 11, 13]))
+
     else:
         p = subprocess.Popen(['zfs', 'send', '-v', '-n', '-i', src_snap1, src_snap2], stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE)
         output = p.communicate()[1]  # get only  stderror in [1]
-        logger.info('ZFS test==> {0}'.format(output.decode('utf-8')))
+        output = output.decode('utf-8')
+        logger.info('ZFS test==> {0}'.format(output))
         exit_code = p.returncode
         exit_on_error(exit_code)
+        if test_only:
+            return tuple(map(lambda num: output.split()[num], [2, 4, 8]))
         continue_or_exit('send INCREMENTAL snaps {0} and {1} to volume {2} ?'.format(src_snap1, src_snap2, dst_volume),
                          debug_flag)
-        p1 = subprocess.Popen(['zfs', 'send', '-v', '-p', '-i', src_snap1, src_snap2], stdout=subprocess.PIPE)
-        p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
-        output = p2.communicate()[0]  # need for below string, in oposite it return None
+        p1 = subprocess.Popen(['zfs', 'send', '-v', '-p', '-i', src_snap1, src_snap2],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE)
+        output = p2.communicate()
+        output_error = output[1].decode()
+        output = output[0].decode()  # need for below string, in oposite it return None
         exit_code = p2.returncode
-        exit_on_error(exit_code)
+        stderr_send = p1.communicate()[1].decode()
+        exit_on_error(exit_code, output + output_error)
+        """
+['@2015-01-13_14:03:29',
+ 'zroot-n/test@2015-01-15_20:41:48',
+ '120K',
+ 'receiving',
+ 'incremental',
+ 'stream',
+ 'of',
+ 'zroot-n/test@2015-01-15_20:41:48',
+ 'into',
+ 'backup/test@2015-01-15_20:41:48',
+ 'received',
+ '192KB',
+ 'stream',
+ 'in',
+ '1',
+ 'seconds',
+ '(192KB/sec)']
+ return [previous snap, send snap, est. size, trans. snap, received, time, speed ]
+"""
+        return list(map(lambda num: stderr_send.split()[num], [2, 4, 8])) \
+               + list(map(lambda num: output.split()[num], [6, 8, 11, 13]))
 
 
 def linux_workaround_umount(execute=False):
@@ -322,3 +365,7 @@ def destroy_snaps(snap):
     exit_code = subprocess.call(['zfs', 'destroy', snap])
     exit_on_error(exit_code)
     logger.debug('deleted snapshot {0} exit..{1}'.format(snap, exit_code))
+
+
+
+

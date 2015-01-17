@@ -10,7 +10,7 @@ import argparse
 import configparser
 
 from zbackup_lib import *
-
+from status_lib import print_table
 # ############# constant values #################
 config_file = 'zbackup.ini'
 atempts_to_mount = 3
@@ -31,7 +31,7 @@ arg_group_v_q.add_argument("-q", "--quiet", action='store_true',
                            help='be quiet, only CRITICAL logs')
 
 parser.add_argument('-s', '--save-last-snapshots', type=int, default=0,
-                    help='Delete old snapshots from all devices, it override value in [DEFAULT] block of .INI file')
+                    help='Delete old snapshots from all devices, it override values in all BLOCKs .INI file')
 arg = parser.parse_args()
 
 # print(arg.verbosity)
@@ -96,15 +96,15 @@ else:
                     'exit...')
     exit(202)
 
-
 usb_disk = Pool(pool, partuuid)  # init USB disk
+usb_disk.altroot = config.get('USB device', 'mount-point', fallback='/backup')
 usb_disk.mount(atempts_to_mount)
 
 # ############## set direction according command line options ###########
 if arg.direction == 'usb':
     # noinspection PyUnboundLocalVariable
     current_volume = ToUSB(root_pool, usb_disk.pool, debug_flag)
-    current_volume.save_old_n_snapshots_dst = config.get('USB device', 'save-last-snapshots', fallback=0)
+    current_volume.save_n_old_snapshots_dst = config.get('USB device', 'save-last-snapshots', fallback=0)
     # noinspection PyUnboundLocalVariable
     current_volume.save_n_old_snapshots_src = config.get(host_config, 'save-last-snapshots', fallback=0)
 elif arg.direction == 'os':
@@ -112,23 +112,27 @@ elif arg.direction == 'os':
     current_volume = ToOS(usb_disk.pool, root_pool, debug_flag)
     current_volume.save_n_old_snapshots_src = config.get('USB device', 'save-last-snapshots', fallback=0)
     # noinspection PyUnboundLocalVariable
-    current_volume.save_old_n_snapshots_dst = config.get(host_config, 'save-last-snapshots', fallback=0)
+    current_volume.save_n_old_snapshots_dst = config.get(host_config, 'save-last-snapshots', fallback=0)
 else:
     logger.error('wrong direction exit ... ')
     exit(201)
 
 # noinspection PyUnboundLocalVariable
 current_volume.save_n_old_snapshots_src = int(current_volume.save_n_old_snapshots_src)
-current_volume.save_old_n_snapshots_dst = int(current_volume.save_old_n_snapshots_dst)
+current_volume.save_n_old_snapshots_dst = int(current_volume.save_n_old_snapshots_dst)
 
 if arg.save_last_snapshots != 0:
     # noinspection PyUnboundLocalVariable
     current_volume.save_n_old_snapshots_src = arg.save_last_snapshots
-    current_volume.save_old_n_snapshots_dst = arg.save_last_snapshots
+    current_volume.save_n_old_snapshots_dst = arg.save_last_snapshots
 
 
 # #################### main block #######################
 # noinspection PyUnboundLocalVariable
+work_table = [('previous snapshot', 'prev. snap. date', 'snapshot to send', 'recv. destination', 'size')]
+result_table = [('previous snap', 'send snap', 'est. size', 'trans. snap', 'received', 'time', 'speed')]
+delete_snaps_table = [('del. snapshot', 'create date')]
+# create snaps and tables, in work_table - snaps which to send and where
 for volume in config.get(host_config, 'volume').split():
     # noinspection PyUnboundLocalVariable
     logger.debug('INIT==> {0}'.format(current_volume))
@@ -137,8 +141,27 @@ for volume in config.get(host_config, 'volume').split():
         current_volume.linux_workarount = True
 
     logger.debug('UPDATE==> {0}'.format(current_volume))
-    current_volume.send_snap()
-    current_volume.delete_old_snapshots()
+
+    work_table.append(current_volume.send_snap(True))
+    # current_volume.delete_old_snapshots()
+    if current_volume.snaps_to_remove_src is not None:
+        delete_snaps_table += current_volume.snaps_to_remove_src
+    if current_volume.snaps_to_remove_dst is not None:
+        delete_snaps_table += current_volume.snaps_to_remove_dst
+
+logger.debug('output_table {0}'.format(work_table))
+print_table(work_table)
+continue_or_exit('start send snapshots', True)
+tuple(map(lambda lst: logger.debug('(output_table {0}, {1}, {2}'.format(lst[0], lst[2], lst[3])), work_table[1:]))
+result_table += list(map(lambda lst: send_snap(lst[0], lst[2], lst[3], debug_flag, False), work_table[1:]))
+logger.debug('result_table {0}'.format(result_table))
+print_table(result_table)
+if len(delete_snaps_table) > 1:
+    print_table(delete_snaps_table)
+    continue_or_exit('delete snaps?', True)
+    tuple(map(lambda lst: destroy_snaps(lst[0]), delete_snaps_table))
+else:
+    logger.info('no snaps to delete according config')
 
 usb_disk.umount()
 logger.info("----------- END ------------")

@@ -43,6 +43,7 @@ lrwxrwxrwx 1 root root 10 гру 27 19:07 ebf6c572-c553-11e1-8897-5c260a0e9ee6 -
 lrwxrwxrwx 1 root root 10 гру 27 19:07 fa11924d-c553-11e1-8897-5c260a0e9ee6 -> ../../sdc2
 ```
   - truecrypt - Does you secure your USB disk via truecrypt or not.
+  - mount-point - place where to mount all USB volumes (early USB disk pools were imported with flag '-N'- don't mount)
   
 ###### For example:
 ```

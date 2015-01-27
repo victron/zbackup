@@ -10,7 +10,7 @@ import argparse
 import configparser
 
 from zbackup_lib import *
-from status_lib import print_table
+from tables import print_table_as_is, refom_table_fixt_column
 # ############# constant values #################
 config_file = 'zbackup.ini'
 atempts_to_mount = 3
@@ -150,16 +150,19 @@ for volume in config.get(host_config, 'volume').split():
         delete_snaps_table += current_volume.snaps_to_remove_dst
 
 logger.debug('output_table {0}'.format(work_table))
-print_table(work_table)
+#print_table(work_table)
+print_table_as_is(refom_table_fixt_column(work_table,18))
 continue_or_exit('start send snapshots', True)
 tuple(map(lambda lst: logger.debug('(output_table {0}, {1}, {2}'.format(lst[0], lst[2], lst[3])), work_table[1:]))
 result_table += list(map(lambda lst: send_snap(lst[0], lst[2], lst[3], debug_flag, False), work_table[1:]))
 logger.debug('result_table {0}'.format(result_table))
-print_table(result_table)
+#print_table(result_table)
+print_table_as_is(refom_table_fixt_column(result_table,12))
 if len(delete_snaps_table) > 1:
-    print_table(delete_snaps_table)
+    #print_table(delete_snaps_table)
+    print_table_as_is(refom_table_fixt_column(delete_snaps_table,25))
     continue_or_exit('delete snaps?', True)
-    tuple(map(lambda lst: destroy_snaps(lst[0]), delete_snaps_table))
+    tuple(map(lambda lst: destroy_snaps(lst[0]), delete_snaps_table[1:]))
 else:
     logger.info('no snaps to delete according config')
 

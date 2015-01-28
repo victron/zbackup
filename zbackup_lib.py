@@ -71,6 +71,7 @@ class ToUSB(Volume):
             list(map(destroy_snaps, new_volume_data.volume_dst_dict.keys()))
         result = send_snap(new_volume_data.previous_same_snap[0], new_volume_data.newest_src_snap[0],
                            new_volume_data.dst_sys + new_volume_data.volume, new_volume_data.debug, test_only)
+        # noinspection PyPep8
         return new_volume_data.previous_same_snap[0], \
                strftime('%Y-%m-%d_%H:%M:%S', localtime(int(new_volume_data.previous_same_snap[1]))), \
                new_volume_data.newest_src_snap[0], new_volume_data.dst_sys + new_volume_data.volume, result[2]
@@ -142,6 +143,7 @@ class Pool:
                 logger.critical('unknow exeption... ... exit')
                 exit(25)
 
+    # noinspection PyUnusedLocal
     def umount(self, truecrypt=False):
         logger.info('exporting pool.... {0}'.format(self.pool))
         exit_code = subprocess.call(['zpool', 'export', self.pool])
@@ -285,6 +287,7 @@ def send_snap(src_snap1, src_snap2, dst_volume, debug_flag=False, test_only=Fals
         exit_code = p2.returncode
         stderr_send = p1.communicate()[1].decode()
         exit_on_error(exit_code)
+        # noinspection PyPep8
         return list(map(lambda num: stderr_send.split()[num], [2, 4, 8])) \
                + list(map(lambda num: output.split()[num], [6, 8, 11, 13]))
 
@@ -330,6 +333,7 @@ def send_snap(src_snap1, src_snap2, dst_volume, debug_flag=False, test_only=Fals
  '(192KB/sec)']
  return [previous snap, send snap, est. size, trans. snap, received, time, speed ]
 """
+        # noinspection PyPep8
         return list(map(lambda num: stderr_send.split()[num], [2, 4, 8])) \
                + list(map(lambda num: output.split()[num], [6, 8, 11, 13]))
 

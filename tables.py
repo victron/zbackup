@@ -1,12 +1,5 @@
 __author__ = 'vic'
-# save outputs in objects for future collection and using
-"""
-Volume |Same snapshot|date_time          |new snapshot|estimated size
-------------------------------------------------------------------------------------
-zroot-n|20114-10-01  |2014-10-01_10:12:40|2014-10-02  |567 M
-"""
-
-
+# functions for printing tables
 
 
 def print_table(table):
@@ -28,7 +21,7 @@ def print_table(table):
 
 
 def print_table_as_is(table):
-    [ print ('| ' + '|'.join(line) + ' |') for line in table]
+    [print('| ' + '|'.join(line) + ' |') for line in table]
 
 
 def split_len(seq, length):
@@ -42,12 +35,12 @@ def split_len_add_char(seq, length, char=' '):
     return [seq[i:i + length] for i in range(0, len(seq), length)]
 
 
-def refom_table_fixt_column(table, column_size: int):
+def reform_table_fix_columns_sizes(table, column_list: 'list or int') -> list:
     """
     :param table:  [('ssssssssss', 'ffff','ggggggggggg'),
                     ('ddd','eeee','hhhhhhhhhh'),('deeeeeeedd',
                     'eeeerrrrr','hhhhh')]
-    :param column_size: max size of one column
+    :param column_list: list of max size of column, or int value for all columns
     :return: [('ssss', 'ffff', 'gggg'),
               ('ssss', '    ', 'gggg'),
               ('ss  ', '    ', 'ggg '),
@@ -79,45 +72,29 @@ def refom_table_fixt_column(table, column_size: int):
     | ---- | ---- | ---- |
 
     """
-    new_table = []
-    for line in table:
-        max_word = max([len(str(x)) for x in line])
-        max_word += column_size - max_word % column_size
-        new_line = []
-        for word in line:
-            new_word = split_len_add_char(str(word), column_size)
-            new_word += [' ' * column_size for i in range(int(max_word / column_size - len(new_word)))] + [
-                '-' * column_size]
-            new_line.append(new_word)
-        new_table += list(zip(*new_line))
-    return new_table
-
-def reform_table_fix_columns_sizes(table, column_list : list):
+    if isinstance(column_list, int):
+        # create list of int with same values from header
+        # noinspection PyUnusedLocal
+        column_list = [column_list for word in table[0]]
     new_table = []
     for line in table:
         new_line = []
         iter_column_size = iter(column_list)
-        for word in line:
-            new_word = split_len_add_char(str(word), next(iter_column_size))
-            new_line.append(new_word)
-        max_list = max([len(x) for x in new_line])
+        new_line += [split_len_add_char(str(word), next(iter_column_size)) for word in line]
+        max_list = max([len(x) for x in new_line])  # find max list in new_line
         iter_column_size = iter(column_list)
         for lists in new_line:
             current_column_size = next(iter_column_size)
-            lists += [' ' * current_column_size for i in range(max_list - len(lists))] +  ['-' * current_column_size]
+            # noinspection PyUnusedLocal
+            lists += [' ' * current_column_size for i in range(max_list - len(lists))] + ['-' * current_column_size]
         new_table += list(zip(*new_line))
     return new_table
 
 
-
 """
 table = [('ssssssssss', 'ffff','ggggggggggg'),('ddd','eeee','hhhhhhhhhh'),('deeeeeeedd','eeeerrrrr','hhhhh')]
 print_table(table)
+print_table_as_is(reform_table_fix_columns_sizes(table, [4,7,9]))
+print_table_as_is(reform_table_fix_columns_sizes(table, 6))
 
-print_table_as_is(refom_table_fixt_column(table, 4))
 """
-table = [('ssssssssss', 'ffff','ggggggggggg'),('ddd','eeee','hhhhhhhhhh'),('deeeeeeedd','eeeerrrrr','hhhhh')]
-print_table(table)
-
-print_table_as_is(refom_table_fixt_column(table, 4))
-print(print_table_as_is(reform_table_fix_columns_sizes(table, [4,7,9])))

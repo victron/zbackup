@@ -150,7 +150,7 @@ for volume in config.get(host_config, 'volume').split():
         delete_snaps_table += current_volume.snaps_to_remove_dst
 
 logger.debug('output_table {0}'.format(work_table))
-print_table_as_is(reform_table_fix_columns_sizes(work_table, [18, 18, 18, 18, 5]))
+print_table_as_is(reform_table_fix_columns_sizes(work_table, [18, 18, 18, 12, 5]))
 continue_or_exit('start send snapshots', True)
 tuple(map(lambda lst: logger.debug('(output_table {0}, {1}, {2}'.format(lst[0], lst[2], lst[3])), work_table[1:]))
 result_table += list(map(lambda lst: send_snap(lst[0], lst[2], lst[3], debug_flag, False), work_table[1:]))

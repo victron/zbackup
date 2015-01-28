@@ -55,8 +55,9 @@ class ToOS(Volume):
             result = send_snap(self.previous_same_snap[0], self.newest_src_snap[0], self.dst_sys + self.volume,
                                self.debug, test_only)
             linux_workaround_mount(self.linux_workarount)
-            return self.previous_same_snap[0], self.previous_same_snap[1], self.newest_src_snap[
-                0], self.dst_sys + self.volume, result[2]
+            return self.previous_same_snap[0], \
+                   strftime('%Y-%m-%d_%H:%M:%S', localtime(int(self.previous_same_snap[1]))), \
+                   self.newest_src_snap[0], self.dst_sys + self.volume, result[2]
 
 
 class ToUSB(Volume):
@@ -64,7 +65,6 @@ class ToUSB(Volume):
         create_new_snap(self.src_sys, self.volume, self.current_date, self.debug)
         new_volume_data = ToUSB(self.src_sys, self.dst_sys, self.debug)
         new_volume_data.generate_dicts(self.volume)
-        # ToOS.snap(new_volume_data)
         if (new_volume_data.previous_same_snap[0] is None) and (bool(new_volume_data.volume_dst_dict)):
             logger.warning('need to delete snapshots {0}'.format(new_volume_data.volume_dst_dict))
             continue_or_exit('confirm (or do it manually after', True)

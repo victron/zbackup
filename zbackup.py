@@ -138,7 +138,11 @@ for volume in config.get(host_config, 'volume').split():
     logger.debug('INIT==> {0}'.format(current_volume))
     current_volume.generate_dicts(volume)
     if volume == '/tmp' and usb_disk.OS_type == 'Linux':
-        current_volume.linux_workarount = True
+#        current_volume.linux_workarount = True
+        umount_tmp = True
+    else:
+        umount_tmp = False
+    linux_workaround_umount(umount_tmp)
 
     logger.debug('UPDATE==> {0}'.format(current_volume))
 
@@ -166,4 +170,5 @@ else:
     logger.info('no snaps to delete according config')
 
 usb_disk.umount()
+linux_workaround_mount(umount_tmp)
 logger.info("----------- END ------------")

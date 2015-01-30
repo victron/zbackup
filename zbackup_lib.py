@@ -46,6 +46,7 @@ class ToOS(Volume):
     def send_snap(self, test_only: bool=False) -> tuple:
         if self.previous_same_snap == self.newest_src_snap:
             logger.debug('nothing send on OS {0} == {1}'.format(self.previous_same_snap, self.newest_src_snap))
+            return self.previous_same_snap[0], self.previous_same_snap[1], None, None, None
         else:
             linux_workaround_umount(self.linux_workarount)
             if (self.previous_same_snap[0] is None) and (not self.volume_dst_dict):
@@ -55,8 +56,11 @@ class ToOS(Volume):
             result = send_snap(self.previous_same_snap[0], self.newest_src_snap[0], self.dst_sys + self.volume,
                                self.debug, test_only)
             linux_workaround_mount(self.linux_workarount)
-            return self.previous_same_snap[0], \
-                   strftime('%Y-%m-%d_%H:%M:%S', localtime(int(self.previous_same_snap[1]))), \
+            if self.previous_same_snap[1] is None:
+                previous_same_snap_time = None
+            else:
+                previous_same_snap_time = strftime('%Y-%m-%d_%H:%M:%S', localtime(int(self.previous_same_snap[1])))
+            return self.previous_same_snap[0], previous_same_snap_time, \
                    self.newest_src_snap[0], self.dst_sys + self.volume, result[2]
 
 
@@ -270,6 +274,9 @@ def continue_or_exit(question, debug=False):
 
 def send_snap(src_snap1, src_snap2, dst_volume, debug_flag=False, test_only=False):
     # in case src_snap1 == None send full snapshot
+    if  src_snap2 is None:
+        logger.debug('nothing to send')
+        return src_snap1, None, None, None, None, None, None
     if src_snap1 is None:
         logger.debug('<src_snap2> = {0}'.format(src_snap2))
         p = subprocess.Popen(['zfs', 'send', '-v', '-n', src_snap2], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -280,6 +287,16 @@ def send_snap(src_snap1, src_snap2, dst_volume, debug_flag=False, test_only=Fals
         exit_on_error(exit_code)
         if test_only:
             return tuple(map(lambda num: output.split()[num], [2, 4, 8]))
+        continue_or_exit('On LINUX it\'s not posible to use flag -F, if already some snapshots exists,\n'
+                         'we need to delete all snapshots, before sending full stream\n'
+                         ' {0} to {1}'.format(src_snap2, dst_volume), debug_flag)
+        p = subprocess.Popen(['zfs', 'destroy', '-v',  dst_volume + '@%'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        output = p.communicate()[0]
+        output = output.decode('utf-8')
+        logger.info('ZFS ==> {0}'.format(output))
+        exit_code = p.returncode
+        exit_on_error(exit_code)
+
         continue_or_exit('send snap {0} to volume {1} ?'.format(src_snap2, dst_volume), debug_flag)
         p1 = subprocess.Popen(['zfs', 'send', '-v', '-p', src_snap2], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)

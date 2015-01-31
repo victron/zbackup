@@ -133,6 +133,7 @@ work_table = [('previous snapshot', 'prev. snap. date', 'snapshot to send', 'rec
 result_table = [('previous snap', 'send snap', 'est. size', 'trans. snap', 'received', 'time', 'speed')]
 delete_snaps_table = [('del. snapshot', 'create date')]
 # create snaps and tables, in work_table - snaps which to send and where
+umount_tmp = False
 for volume in config.get(host_config, 'volume').split():
     # noinspection PyUnboundLocalVariable
     logger.debug('INIT==> {0}'.format(current_volume))
@@ -140,12 +141,8 @@ for volume in config.get(host_config, 'volume').split():
     if volume == '/tmp' and usb_disk.OS_type == 'Linux':
 #        current_volume.linux_workarount = True
         umount_tmp = True
-    else:
-        umount_tmp = False
-    linux_workaround_umount(umount_tmp)
 
     logger.debug('UPDATE==> {0}'.format(current_volume))
-
     work_table.append(current_volume.send_snap(True))
     # current_volume.delete_old_snapshots()
     if current_volume.snaps_to_remove_src is not None:
@@ -153,16 +150,17 @@ for volume in config.get(host_config, 'volume').split():
     if current_volume.snaps_to_remove_dst is not None:
         delete_snaps_table += current_volume.snaps_to_remove_dst
 
-logger.debug('output_table {0}'.format(work_table))
+logger.debug('<work_table> {0}'.format(work_table))
 print_table_as_is(reform_table_fix_columns_sizes(work_table, [18, 18, 18, 12, 5]))
 continue_or_exit('start send snapshots', True)
-tuple(map(lambda lst: logger.debug('(output_table {0}, {1}, {2}'.format(lst[0], lst[2], lst[3])), work_table[1:]))
+linux_workaround_umount(umount_tmp)
 result_table += list(map(lambda lst: send_snap(lst[0], lst[2], lst[3], debug_flag, False), work_table[1:]))
-logger.debug('result_table {0}'.format(result_table))
+logger.debug('<result_table> {0}'.format(result_table))
 logger.info('result work table below:')
 print_table_as_is(reform_table_fix_columns_sizes(result_table, [12, 12, 5, 12, 7, 5, 12]))
 if len(delete_snaps_table) > 1:
     logger.info('list to delete snap according config below:')
+    logger.debug('<delete_snaps_table>'.format(delete_snaps_table))
     print_table_as_is(reform_table_fix_columns_sizes(delete_snaps_table, 25))
     continue_or_exit('delete snaps?', True)
     tuple(map(lambda lst: destroy_snaps(lst[0]), delete_snaps_table[1:]))

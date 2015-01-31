@@ -46,10 +46,11 @@ class ToOS(Volume):
     def send_snap(self, test_only: bool=False) -> tuple:
         if self.previous_same_snap == self.newest_src_snap:
             logger.debug('nothing send on OS {0} == {1}'.format(self.previous_same_snap, self.newest_src_snap))
-            return self.previous_same_snap[0], self.previous_same_snap[1], None, None, None
+            return self.previous_same_snap[0], strftime('%Y-%m-%d_%H:%M:%S',
+                                                        localtime(int(self.previous_same_snap[1]))), None, None, None
         else:
             linux_workaround_umount(self.linux_workarount)
-            if (self.previous_same_snap[0] is None) and (not self.volume_dst_dict):
+            if (self.previous_same_snap[0] is None) and isinstance(self.volume_dst_dict,dict) and self.volume_dst_dict:
                 logger.info('need to delete snapshots {0}'.format(self.volume_dst_dict))
                 continue_or_exit('confirm (or do it manually after', True)
                 list(map(destroy_snaps, self.volume_dst_dict.keys()))
@@ -287,6 +288,7 @@ def send_snap(src_snap1, src_snap2, dst_volume, debug_flag=False, test_only=Fals
         exit_on_error(exit_code)
         if test_only:
             return tuple(map(lambda num: output.split()[num], [2, 4, 8]))
+        """
         continue_or_exit('On LINUX it\'s not posible to use flag -F, if already some snapshots exists,\n'
                          'we need to delete all snapshots, before sending full stream\n'
                          ' {0} to {1}'.format(src_snap2, dst_volume), debug_flag)
@@ -296,7 +298,7 @@ def send_snap(src_snap1, src_snap2, dst_volume, debug_flag=False, test_only=Fals
         logger.info('ZFS ==> {0}'.format(output))
         exit_code = p.returncode
         exit_on_error(exit_code)
-
+        """
         continue_or_exit('send snap {0} to volume {1} ?'.format(src_snap2, dst_volume), debug_flag)
         p1 = subprocess.Popen(['zfs', 'send', '-v', '-p', src_snap2], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
@@ -356,14 +358,14 @@ def send_snap(src_snap1, src_snap2, dst_volume, debug_flag=False, test_only=Fals
 
 
 def linux_workaround_umount(execute=False):
-    if execute:
+    if execute and (subprocess.getoutput('service lightdm status') != 'lightdm stop/waiting'):
         exit_code = subprocess.call(['service', 'lightdm', 'stop'])
         logger.debug('stop lightd exit code = {0}'.format(exit_code))
         exit_on_error(exit_code)
         sleep(3)
-        exit_code = subprocess.call(['umount', '-l', '/tmp'])
-        logger.debug('umount /tmp exit code = {0}'.format(exit_code))
-        exit_on_error(exit_code)
+#        exit_code = subprocess.call(['umount', '-l', '/tmp'])
+#        logger.debug('umount /tmp exit code = {0}'.format(exit_code))
+#        exit_on_error(exit_code)
     else:
         pass
 

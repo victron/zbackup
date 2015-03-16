@@ -305,6 +305,8 @@ def send_snap(src_snap1, src_snap2, dst_volume, debug_flag=False, test_only=Fals
         output = p2.communicate()[0].decode()
         exit_code = p2.returncode
         stderr_send = p1.communicate()[1].decode()
+        logger.debug('<zfs send> '.format(output))
+        logger.debug('<zfs receive> '.format(stderr_send))
         exit_on_error(exit_code)
         # noinspection PyPep8
         return list(map(lambda num: stderr_send.split()[num], [2, 4, 8])) \
@@ -331,6 +333,8 @@ def send_snap(src_snap1, src_snap2, dst_volume, debug_flag=False, test_only=Fals
         output = output[0].decode()  # need for below string, in oposite it return None
         exit_code = p2.returncode
         stderr_send = p1.communicate()[1].decode()
+        logger.debug('<zfs send> '.format(output))
+        logger.debug('<zfs receive> '.format(stderr_send))
         exit_on_error(exit_code, output + output_error)
         """
 ['@2015-01-13_14:03:29',

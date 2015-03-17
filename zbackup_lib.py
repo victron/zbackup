@@ -303,10 +303,10 @@ def send_snap(src_snap1, src_snap2, dst_volume, debug_flag=False, test_only=Fals
         p1 = subprocess.Popen(['zfs', 'send', '-v', '-p', src_snap2], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         p2 = subprocess.Popen(['zfs', 'receive', '-v', '-F', dst_volume], stdin=p1.stdout, stdout=subprocess.PIPE)
         output = p2.communicate()[0].decode()
-        exit_code = p2.returncode
         stderr_send = p1.communicate()[1].decode()
-        logger.debug('<zfs send> {}'.format(output))
-        logger.debug('<zfs receive> {}'.format(stderr_send))
+        exit_code = p2.returncode
+        logger.debug('<zfs send> {}'.format(stderr_send))
+        logger.debug('<zfs receive> {}'.format(output))
         exit_on_error(exit_code)
         # noinspection PyPep8
         return list(map(lambda num: stderr_send.split()[num], [2, 4, 8])) \
@@ -357,8 +357,12 @@ def send_snap(src_snap1, src_snap2, dst_volume, debug_flag=False, test_only=Fals
  return [previous snap, send snap, est. size, trans. snap, received, time, speed ]
 """
         # noinspection PyPep8
+        #result = list(map(lambda num: stderr_send.split()[num], [2, 4, 8])) \
+        #       + list(map(lambda num: output.split()[num], [6, 8, 11, 13]))
+        #result = [stderr_send.split()[num] for num in [2, 4, 8]] + [output.split()[num] for num in [6, 8, 11, 13]]
+        #return result
         return list(map(lambda num: stderr_send.split()[num], [2, 4, 8])) \
-               + list(map(lambda num: output.split()[num], [6, 8, 11, 13]))
+                + list(map(lambda num: output.split()[num], [6, 8, 11, 13]))
 
 
 def linux_workaround_umount(execute=False):

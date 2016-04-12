@@ -1,3 +1,4 @@
+
 __author__ = 'vic'
 # functions for printing tables
 
@@ -31,6 +32,8 @@ def split_len(seq, length):
 def split_len_add_char(seq, length, char=' '):
     # split string on equal length of char list, to last list member attach <char>
     chars_to_add = length - len(seq) % length
+    if chars_to_add == length:
+        chars_to_add = 0
     seq = seq + char * (chars_to_add // len(char)) + char[:chars_to_add % len(char)]
     return [seq[i:i + length] for i in range(0, len(seq), length)]
 
@@ -70,7 +73,6 @@ def reform_table_fix_columns_sizes(table, column_list: 'list or int') -> list:
     | eeee | rrrr | h    |
     | dd   | r    |      |
     | ---- | ---- | ---- |
-
     """
     if isinstance(column_list, int):
         # create list of int with same values from header
@@ -96,5 +98,5 @@ table = [('ssssssssss', 'ffff','ggggggggggg'),('ddd','eeee','hhhhhhhhhh'),('deee
 print_table(table)
 print_table_as_is(reform_table_fix_columns_sizes(table, [4,7,9]))
 print_table_as_is(reform_table_fix_columns_sizes(table, 6))
-
+print_table_as_is(reform_table_fix_columns_sizes(table, [15,15,10]))
 """
